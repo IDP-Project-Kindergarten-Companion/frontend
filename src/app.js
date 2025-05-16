@@ -77,7 +77,7 @@ export const AuthProvider = ({ children }) => {
           try {
             // Construct refresh token URL
             const refreshBaseUrl = API_BASE_URLS['AUTH'];
-            const refreshUrl = `${refreshBaseUrl}/refresh`; // Changed: /auth/refresh to /refresh
+            const refreshUrl = `${refreshBaseUrl}/refresh`;
 
             const refreshResponse = await fetch(refreshUrl, {
               method: 'POST',
@@ -122,12 +122,11 @@ export const AuthProvider = ({ children }) => {
       console.error(`API Request Error (${method} ${url}):`, error);
       throw error;
     }
-  }, [token]); // Removed 'logout' from dependency array as it's defined below and wrapped in useCallback itself
+  }, [token]);
 
 
   const login = async (username, password) => {
     try {
-      // Changed: endpoint from '/auth/login' to '/login'
       const data = await apiRequest('AUTH', '/login', 'POST', { username, password }, false);
       setToken(data.access_token);
       setRefreshToken(data.refresh_token);
@@ -144,7 +143,6 @@ export const AuthProvider = ({ children }) => {
   const fetchUserDetails = useCallback(async (currentToken) => {
     if (!currentToken) return;
     try {
-      // Changed: endpoint from '/auth/me' to '/me'
       const userData = await apiRequest('AUTH', '/me', 'GET', null, true, { 'Authorization': `Bearer ${currentToken}`});
       setUser({
         id: userData.user_id,
@@ -158,7 +156,7 @@ export const AuthProvider = ({ children }) => {
       console.error("Failed to fetch user details:", error);
       logout();
     }
-  }, [apiRequest]); // Removed 'logout' from dependency array
+  }, [apiRequest]); 
 
   const logout = useCallback(() => {
     setUser(null);
@@ -166,8 +164,6 @@ export const AuthProvider = ({ children }) => {
     setRefreshToken(null);
     localStorage.removeItem('accessToken');
     localStorage.removeItem('refreshToken');
-    // Optional: Call backend logout if needed
-    // apiRequest('AUTH', '/logout', 'POST', null, false).catch(e => console.warn("Logout API call failed", e));
   }, []);
 
   useEffect(() => {
@@ -403,7 +399,6 @@ const RegisterPage = ({ setCurrentPage }) => {
       return;
     }
     try {
-      // Changed: endpoint from '/auth/register' to '/register'
       await apiRequest('AUTH', '/register', 'POST', formData, false);
       setSuccess('Registration successful! Please login.');
       setFormData({ username: '', password: '', role: 'parent', email: '', first_name: '', last_name: '' });
@@ -472,7 +467,6 @@ const DashboardPage = ({ setCurrentPage, setSelectedChildId }) => {
       setIsLoading(true);
       setError('');
       try {
-        // Changed: endpoint from '/profiles/children' to '/children'
         const data = await apiRequest('CHILD_PROFILE', '/children', 'GET');
         setChildren(Array.isArray(data) ? data : (data.children || [])); 
       } catch (err) {
@@ -552,7 +546,6 @@ const UserProfilePage = ({ setCurrentPage }) => {
         return;
     }
     try {
-      // Changed: endpoint from '/auth/change-password' to '/change-password'
       await apiRequest('AUTH', '/change-password', 'POST', { old_password: oldPassword, new_password: newPassword });
       setMessage({ text: 'Password changed successfully!', type: 'success' });
       setOldPassword('');
@@ -612,7 +605,6 @@ const AddChildPage = ({ setCurrentPage }) => {
     setLinkingCode('');
     setIsLoading(true);
     try {
-      // Changed: endpoint from '/profiles/children' to '/children'
       const response = await apiRequest('CHILD_PROFILE', '/children', 'POST', formData);
       setMessage({ text: 'Child added successfully!', type: 'success' });
       setLinkingCode(response.linking_code);
@@ -667,12 +659,12 @@ const LinkChildPage = ({ setCurrentPage }) => {
     setMessage({ text: '', type: '' });
     setIsLoading(true);
     try {
-      // Changed: endpoint from '/profiles/children/link-supervisor' to '/children/link-supervisor'
       await apiRequest('CHILD_PROFILE', '/children/link-supervisor', 'POST', { linking_code: linkingCode });
       setMessage({ text: 'Successfully linked to child!', type: 'success' });
       setLinkingCode('');
       setTimeout(() => setCurrentPage('dashboard'), 2000);
-    } catch (err)      setMessage({ text: err.message || 'Failed to link to child. Invalid or expired code.', type: 'error' });
+    } catch (err) { // CORRECTED: Added opening curly brace for the catch block
+      setMessage({ text: err.message || 'Failed to link to child. Invalid or expired code.', type: 'error' });
     } finally {
       setIsLoading(false);
     }
@@ -723,7 +715,6 @@ const ChildProfilePage = ({ setCurrentPage, childId }) => {
       setError('');
       setMessage({text: '', type: ''});
       try {
-        // Changed: endpoint from `/profiles/children/${childId}` to `/children/${childId}`
         const data = await apiRequest('CHILD_PROFILE', `/children/${childId}`, 'GET');
         setChildData(data);
         setEditableChildData({...data}); 
@@ -738,7 +729,6 @@ const ChildProfilePage = ({ setCurrentPage, childId }) => {
       setIsLoadingActivities(true);
       try {
         const params = new URLSearchParams({ child_id: childId });
-        // ACTIVITY_LOG base is '', endpoint is `/activities...` which is correct
         const data = await apiRequest('ACTIVITY_LOG', `/activities?${params.toString()}`, 'GET');
         setActivities(Array.isArray(data) ? data : (data.activities || [])); 
       } catch (err) {
@@ -768,7 +758,6 @@ const ChildProfilePage = ({ setCurrentPage, childId }) => {
       if (dataToUpdate.birthday && dataToUpdate.birthday.includes('T')) {
           dataToUpdate.birthday = dataToUpdate.birthday.split('T')[0];
       }
-      // Changed: endpoint from `/profiles/children/${childId}` to `/children/${childId}`
       const updatedChild = await apiRequest('CHILD_PROFILE', `/children/${childId}`, 'PUT', dataToUpdate);
       setChildData(updatedChild); 
       setEditableChildData({...updatedChild});
@@ -792,7 +781,6 @@ const ChildProfilePage = ({ setCurrentPage, childId }) => {
     const fetchActivitiesAgain = async () => {
       try {
         const params = new URLSearchParams({ child_id: childId });
-        // ACTIVITY_LOG base is '', endpoint is `/activities...` which is correct
         const data = await apiRequest('ACTIVITY_LOG', `/activities?${params.toString()}`, 'GET');
         setActivities(Array.isArray(data) ? data : (data.activities || []));
       } catch (err) {
@@ -909,31 +897,30 @@ const LogActivityModal = ({ isOpen, onClose, activityType, childId, onActivityLo
     setMessage({ text: '', type: '' });
     setIsLoading(true);
     
-    let endpoint = ''; // This will be the full path like /log/meal
+    let endpoint = ''; 
     let payload = { ...formData, childId }; 
 
     try {
       switch (activityType) {
         case 'meal':
-          endpoint = '/log/meal'; // Full path for Kong
+          endpoint = '/log/meal'; 
           payload = { childId, timestamp: new Date(formData.timestamp).toISOString(), notes: formData.notes };
           break;
         case 'nap':
-          endpoint = '/log/nap'; // Full path for Kong
+          endpoint = '/log/nap'; 
           payload = { childId, startTime: new Date(formData.startTime).toISOString(), endTime: new Date(formData.endTime).toISOString(), wokeUpDuring: !!formData.wokeUpDuring, notes: formData.notes };
           break;
         case 'drawing':
-          endpoint = '/log/drawing'; // Full path for Kong
+          endpoint = '/log/drawing'; 
           payload = { childId, timestamp: new Date(formData.timestamp).toISOString(), photoUrl: formData.photoUrl, title: formData.title, description: formData.description };
           break;
         case 'behavior':
-          endpoint = '/log/behavior'; // Full path for Kong
+          endpoint = '/log/behavior'; 
           payload = { childId, date: formData.date, activities: formData.activities.split(',').map(s => s.trim()).filter(s => s), grade: formData.grade, notes: formData.notes };
           break;
         default:
           throw new Error("Invalid activity type");
       }
-      // ACTIVITY_LOG base is '', so endpoint is the full path
       await apiRequest('ACTIVITY_LOG', endpoint, 'POST', payload);
       setIsLoading(false);
       onActivityLogged(); 
@@ -1218,6 +1205,8 @@ const App = () => {
   );
 };
 
+// Entry point for the React application
+// Assuming this app.js is now in the src folder, and src/index.js imports it.
 export default function Main() {
   return (
     <AuthProvider>
