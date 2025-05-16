@@ -2,32 +2,10 @@ import React, { useState, useEffect, createContext, useContext, useCallback } fr
 import { User, LogIn, UserPlus, LayoutDashboard, LogOut, BookOpen, Edit3, PlusCircle, Link2, Sun, Moon, Image as ImageIcon, Award, ChevronDown, ChevronUp, AlertTriangle, CheckCircle, InfoIcon, XCircle } from 'lucide-react';
 
 // Configuration for API base URLs
-// These will be relative paths to your Kong gateway
 const API_BASE_URLS = {
-  AUTH: '/auth',             // Kong path for authentication service
-  CHILD_PROFILE: '/profiles',  // Kong path for child profile service
-  ACTIVITY_LOG: '',          // Endpoints for activity log will be full paths like /log/meal or /activities
-};
-
-// --- New Color Palette (Inspired by the Owl Image) ---
-const brandColors = {
-  primary: '#967259', // Muted, warm brown (Owl's body)
-  primaryHover: '#7A5C47', // Darker shade for hover
-  secondary: '#FBC4A6', // Peachy pink (Owl's cheeks / accent)
-  secondaryHover: '#F8B08B', // Darker peach for hover
-  background: '#FFF7ED', // Very light peach/beige (Image background)
-  surface: '#FFFCF7', // Warmer off-white (Card backgrounds, Owl's belly)
-  text: '#654321', // Dark, warm brown (Owl's outline / main text)
-  textLight: '#8B6B5A', // Lighter warm brown (Secondary text)
-  border: '#D1BFAE', // Light muted brown (Subtle borders)
-  error: '#E57373', // Softer red for errors
-  errorBg: '#FFEBEE',
-  success: '#81C784', // Softer green for success
-  successBg: '#E8F5E9',
-  info: '#64B5F6', // Softer blue for info
-  infoBg: '#E3F2FD',
-  warning: '#FFB74D', // Softer orange for warning
-  warningBg: '#FFF8E1',
+  AUTH: '/auth',
+  CHILD_PROFILE: '/profiles',
+  ACTIVITY_LOG: '',
 };
 
 // --- Context for Authentication ---
@@ -39,125 +17,6 @@ export const AuthProvider = ({ children }) => {
   const [refreshToken, setRefreshToken] = useState(localStorage.getItem('refreshToken'));
   const [isLoading, setIsLoading] = useState(true);
 
-  // useCallback for apiRequest to memoize it
-  const apiRequest = useCallback(async (serviceKey, endpoint, method = 'GET', body = null, requiresAuth = true, customHeaders = {}) => {
-    let baseUrl = API_BASE_URLS[serviceKey];
-
-    if (typeof baseUrl === 'undefined') { // Check if serviceKey is valid
-      throw new Error(`Service base path for ${serviceKey} not configured or invalid.`);
-    }
-
-    // Construct the full path
-    // If baseUrl is empty (like for ACTIVITY_LOG), endpoint is the full path.
-    // Otherwise, combine baseUrl and endpoint.
-    const url = baseUrl ? `${baseUrl}${endpoint.startsWith('/') ? endpoint : '/' + endpoint}` : endpoint;
-
-    const headers = {
-      'Content-Type': 'application/json',
-      ...customHeaders,
-    };
-
-    if (requiresAuth && token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
-
-    const config = {
-      method,
-      headers,
-    };
-
-    if (body) {
-      config.body = JSON.stringify(body);
-    }
-
-    try {
-      const response = await fetch(url, config);
-      if (response.status === 401 && requiresAuth) {
-        if (localStorage.getItem('refreshToken')) {
-          try {
-            // Construct refresh token URL
-            const refreshBaseUrl = API_BASE_URLS['AUTH'];
-            const refreshUrl = `${refreshBaseUrl}/refresh`;
-
-            const refreshResponse = await fetch(refreshUrl, {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${localStorage.getItem('refreshToken')}`,
-              },
-            });
-            if (refreshResponse.ok) {
-              const { access_token } = await refreshResponse.json();
-              setToken(access_token);
-              localStorage.setItem('accessToken', access_token);
-              headers['Authorization'] = `Bearer ${access_token}`;
-              const retryResponse = await fetch(url, { ...config, headers });
-              if (!retryResponse.ok) {
-                const errorData = await retryResponse.json().catch(() => ({ message: retryResponse.statusText }));
-                throw new Error(errorData.message || `HTTP error! status: ${retryResponse.status}`);
-              }
-              return retryResponse.json().catch(() => ({}));
-            } else {
-              logout();
-              throw new Error("Session expired. Please login again.");
-            }
-          } catch (refreshError) {
-            logout();
-            throw refreshError;
-          }
-        } else {
-          logout();
-          throw new Error("Session expired. Please login again.");
-        }
-      }
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ message: response.statusText }));
-        throw new Error(errorData.message || `HTTP error! status: ${response.status}`);
-      }
-      if (response.status === 204 || response.headers.get("content-length") === "0") {
-        return {};
-      }
-      return response.json();
-    } catch (error) {
-      console.error(`API Request Error (${method} ${url}):`, error);
-      throw error;
-    }
-  }, [token]);
-
-
-  const login = async (username, password) => {
-    try {
-      const data = await apiRequest('AUTH', '/login', 'POST', { username, password }, false);
-      setToken(data.access_token);
-      setRefreshToken(data.refresh_token);
-      localStorage.setItem('accessToken', data.access_token);
-      localStorage.setItem('refreshToken', data.refresh_token);
-      await fetchUserDetails(data.access_token);
-      return data;
-    } catch (error) {
-      console.error("Login failed:", error);
-      throw error;
-    }
-  };
-
-  const fetchUserDetails = useCallback(async (currentToken) => {
-    if (!currentToken) return;
-    try {
-      const userData = await apiRequest('AUTH', '/me', 'GET', null, true, { 'Authorization': `Bearer ${currentToken}`});
-      setUser({
-        id: userData.user_id,
-        username: userData.username,
-        role: userData.role,
-        email: userData.email,
-        firstName: userData.first_name,
-        lastName: userData.last_name,
-      });
-    } catch (error) {
-      console.error("Failed to fetch user details:", error);
-      logout();
-    }
-  }, [apiRequest]); 
-
   const logout = useCallback(() => {
     setUser(null);
     setToken(null);
@@ -166,19 +25,104 @@ export const AuthProvider = ({ children }) => {
     localStorage.removeItem('refreshToken');
   }, []);
 
+  const apiRequest = useCallback(async (serviceKey, endpoint, method = 'GET', body = null, requiresAuth = true, customHeaders = {}) => {
+    let baseUrl = API_BASE_URLS[serviceKey];
+    if (typeof baseUrl === 'undefined') {
+      throw new Error(`Service base path for ${serviceKey} not configured or invalid.`);
+    }
+    const url = baseUrl ? `${baseUrl}${endpoint.startsWith('/') ? endpoint : '/' + endpoint}` : endpoint;
+    const headers = { 'Content-Type': 'application/json', ...customHeaders };
+    if (requiresAuth && token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+    const config = { method, headers };
+    if (body) config.body = JSON.stringify(body);
+
+    try {
+      const response = await fetch(url, config);
+      if (response.status === 401 && requiresAuth) {
+        if (localStorage.getItem('refreshToken')) {
+          try {
+            const refreshBaseUrl = API_BASE_URLS['AUTH'];
+            const refreshUrl = `${refreshBaseUrl}/refresh`;
+            const refreshResponse = await fetch(refreshUrl, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${localStorage.getItem('refreshToken')}` },
+            });
+            if (refreshResponse.ok) {
+              const { access_token } = await refreshResponse.json();
+              setToken(access_token); 
+              localStorage.setItem('accessToken', access_token);
+              headers['Authorization'] = `Bearer ${access_token}`; 
+              const retryResponse = await fetch(url, { ...config, headers });
+              if (!retryResponse.ok) {
+                const errorData = await retryResponse.json().catch(() => ({ message: retryResponse.statusText }));
+                throw new Error(errorData.message || `HTTP error! status: ${retryResponse.status}`);
+              }
+              return retryResponse.json().catch(() => ({})); 
+            } else {
+              logout(); throw new Error("Session expired. Please login again.");
+            }
+          } catch (refreshError) {
+            logout(); throw refreshError;
+          }
+        } else {
+          logout(); throw new Error("Session expired. Please login again.");
+        }
+      }
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ message: response.statusText }));
+        throw new Error(errorData.message || `HTTP error! status: ${response.status}`);
+      }
+      if (response.status === 204 || response.headers.get("content-length") === "0") return {};
+      return response.json();
+    } catch (error) {
+      console.error(`API Request Error (${method} ${url}):`, error);
+      throw error;
+    }
+  }, [token, logout]); 
+
+  const fetchUserDetails = useCallback(async (currentToken) => {
+    if (!currentToken) return;
+    try {
+      const userData = await apiRequest('AUTH', '/me', 'GET', null, true, { 'Authorization': `Bearer ${currentToken}`});
+      setUser({
+        id: userData.user_id, username: userData.username, role: userData.role,
+        email: userData.email, firstName: userData.first_name, lastName: userData.last_name,
+      });
+    } catch (error) {
+      console.error("Failed to fetch user details:", error);
+      logout(); 
+    }
+  }, [apiRequest, logout]); 
+
+  const login = async (username, password) => {
+    try {
+      const data = await apiRequest('AUTH', '/login', 'POST', { username, password }, false);
+      setToken(data.access_token);
+      setRefreshToken(data.refresh_token);
+      localStorage.setItem('accessToken', data.access_token);
+      localStorage.setItem('refreshToken', data.refresh_token);
+      await fetchUserDetails(data.access_token); 
+      return data;
+    } catch (error) {
+      console.error("Login failed:", error);
+      throw error;
+    }
+  };
+
   useEffect(() => {
     const initializeAuth = async () => {
       setIsLoading(true);
       const storedToken = localStorage.getItem('accessToken');
       if (storedToken) {
-        setToken(storedToken);
+        setToken(storedToken); 
         await fetchUserDetails(storedToken);
       }
       setIsLoading(false);
     };
     initializeAuth();
   }, [fetchUserDetails]);
-
 
   return (
     <AuthContext.Provider value={{ user, token, isLoading, login, logout, apiRequest, setUser, setToken }}>
@@ -192,29 +136,19 @@ export const useAuth = () => useContext(AuthContext);
 // --- Reusable Components ---
 const MessageBox = ({ message, type, onDismiss }) => {
   if (!message) return null;
-
-  const baseClasses = "p-4 mb-4 rounded-lg shadow-md flex items-center text-sm";
   const typeInfo = {
-    success: { bg: brandColors.successBg, border: brandColors.success, text: brandColors.success, IconCmp: CheckCircle },
-    error: { bg: brandColors.errorBg, border: brandColors.error, text: brandColors.error, IconCmp: XCircle },
-    info: { bg: brandColors.infoBg, border: brandColors.info, text: brandColors.info, IconCmp: InfoIcon },
-    warning: { bg: brandColors.warningBg, border: brandColors.warning, text: brandColors.warning, IconCmp: AlertTriangle },
+    success: { bg: 'bg-brand-successBg', border: 'border-brand-success', text: 'text-brand-success', IconCmp: CheckCircle },
+    error: { bg: 'bg-brand-errorBg', border: 'border-brand-error', text: 'text-brand-error', IconCmp: XCircle },
+    info: { bg: 'bg-brand-infoBg', border: 'border-brand-info', text: 'text-brand-info', IconCmp: InfoIcon },
+    warning: { bg: 'bg-brand-warningBg', border: 'border-brand-warning', text: 'text-brand-warning', IconCmp: AlertTriangle },
   };
-  
   const currentType = typeInfo[type] || typeInfo.info;
-
   return (
-    <div 
-      className={`${baseClasses} bg-[${currentType.bg}] border border-[${currentType.border}] text-[${currentType.text}]`}
-    >
-      <currentType.IconCmp className={`w-5 h-5 mr-3 flex-shrink-0 text-[${currentType.text}]`} />
+    <div className={`p-4 mb-4 rounded-lg shadow-md flex items-center text-sm ${currentType.bg} ${currentType.border} ${currentType.text}`}>
+      <currentType.IconCmp className={`w-5 h-5 mr-3 flex-shrink-0 ${currentType.text}`} />
       <span className="flex-grow">{message}</span>
       {onDismiss && (
-        <button 
-          onClick={onDismiss} 
-          className={`ml-auto -mx-1.5 -my-1.5 p-1.5 rounded-lg focus:ring-2 focus:ring-[${brandColors.secondary}] focus:ring-opacity-50 inline-flex h-8 w-8 text-[${currentType.text}] hover:bg-[${currentType.border}] hover:bg-opacity-20`}
-          aria-label="Dismiss"
-        >
+        <button onClick={onDismiss} className={`ml-auto -mx-1.5 -my-1.5 p-1.5 rounded-lg focus:ring-2 focus:ring-brand-secondary focus:ring-opacity-50 inline-flex h-8 w-8 ${currentType.text} hover:bg-brand-border hover:bg-opacity-20`} aria-label="Dismiss">
           <XCircle className="w-5 h-5" />
         </button>
       )}
@@ -224,42 +158,30 @@ const MessageBox = ({ message, type, onDismiss }) => {
 
 const InputField = ({ id, label, type = "text", value, onChange, placeholder, error, required = false, icon }) => (
   <div className="mb-4">
-    <label htmlFor={id} className={`block text-sm font-medium text-[${brandColors.textLight}] mb-1`}>
-      {label} {required && <span className={`text-[${brandColors.error}]`}>*</span>}
+    <label htmlFor={id} className="block text-sm font-medium text-brand-textLight mb-1">
+      {label} {required && <span className="text-brand-error">*</span>}
     </label>
     <div className="relative rounded-lg shadow-sm">
-      {icon && <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">{React.cloneElement(icon, { className: `h-5 w-5 text-[${brandColors.textLight}]` })}</div>}
-      <input
-        type={type}
-        id={id}
-        name={id}
-        value={value}
-        onChange={onChange}
-        placeholder={placeholder}
-        required={required}
-        className={`block w-full px-3 py-2 border ${error ? `border-[${brandColors.error}]` : `border-[${brandColors.border}]`} bg-[${brandColors.surface}] text-[${brandColors.text}] rounded-lg focus:outline-none focus:ring-1 focus:ring-[${brandColors.secondary}] focus:border-[${brandColors.secondary}] sm:text-sm ${icon ? 'pl-10' : ''}`}
+      {icon && <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">{React.cloneElement(icon, { className: "h-5 w-5 text-brand-textLight" })}</div>}
+      <input type={type} id={id} name={id} value={value} onChange={onChange} placeholder={placeholder} required={required}
+        className={`block w-full px-3 py-2 border ${error ? 'border-brand-error' : 'border-brand-border'} bg-brand-surface text-brand-text rounded-lg focus:outline-none focus:ring-1 focus:ring-brand-secondary focus:border-brand-secondary sm:text-sm ${icon ? 'pl-10' : ''}`}
       />
     </div>
-    {error && <p className={`mt-1 text-xs text-[${brandColors.error}]`}>{error}</p>}
+    {error && <p className="mt-1 text-xs text-brand-error">{error}</p>}
   </div>
 );
 
 const Button = ({ children, onClick, type = "button", variant = "primary", disabled = false, fullWidth = false, iconLeft, iconRight, className = "" }) => {
-  const baseStyle = "inline-flex items-center justify-center px-4 py-2 border border-transparent text-sm font-medium rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-[#FFFCF7]";
-  
+  const baseStyle = "inline-flex items-center justify-center px-4 py-2 border border-transparent text-sm font-medium rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-brand-surface";
   const variantStyles = {
-    primary: `text-white bg-[${brandColors.primary}] hover:bg-[${brandColors.primaryHover}] focus:ring-[${brandColors.primary}]`,
-    secondary: `text-[${brandColors.primary}] bg-[${brandColors.secondary}] hover:bg-[${brandColors.secondaryHover}] focus:ring-[${brandColors.secondary}]`,
-    danger: `text-white bg-[${brandColors.error}] hover:bg-opacity-80 focus:ring-[${brandColors.error}]`,
-    ghost: `text-[${brandColors.text}] bg-transparent hover:bg-[${brandColors.secondary}] hover:bg-opacity-30 focus:ring-[${brandColors.secondary}]`,
+    primary: "text-white bg-brand-primary hover:bg-brand-primaryHover focus:ring-brand-primary",
+    secondary: "text-brand-primary bg-brand-secondary hover:bg-brand-secondaryHover focus:ring-brand-secondary",
+    danger: "text-white bg-brand-error hover:bg-red-700 focus:ring-brand-error", 
+    ghost: "text-brand-text bg-transparent hover:bg-brand-secondary hover:bg-opacity-30 focus:ring-brand-secondary",
   };
   const disabledStyle = "opacity-60 cursor-not-allowed";
-
   return (
-    <button
-      type={type}
-      onClick={onClick}
-      disabled={disabled}
+    <button type={type} onClick={onClick} disabled={disabled}
       className={`${baseStyle} ${variantStyles[variant]} ${disabled ? disabledStyle : ''} ${fullWidth ? 'w-full' : ''} ${className} transition-colors duration-150 ease-in-out`}
     >
       {iconLeft && <span className="mr-2 -ml-1 h-5 w-5">{iconLeft}</span>}
@@ -270,29 +192,23 @@ const Button = ({ children, onClick, type = "button", variant = "primary", disab
 };
 
 const Card = ({ children, title, className = "" }) => (
-  <div className={`bg-[${brandColors.surface}] shadow-xl rounded-xl overflow-hidden ${className}`}>
-    {title && <div className={`px-4 py-5 sm:px-6 bg-[${brandColors.background}] border-b border-[${brandColors.border}]`}>
-      <h3 className={`text-lg leading-6 font-medium text-[${brandColors.text}]`}>{title}</h3>
+  <div className={`bg-brand-surface shadow-xl rounded-xl overflow-hidden ${className}`}>
+    {title && <div className="px-4 py-5 sm:px-6 bg-brand-background border-b border-brand-border">
+      <h3 className="text-lg leading-6 font-medium text-brand-text">{title}</h3>
     </div>}
-    <div className="px-4 py-5 sm:p-6">
-      {children}
-    </div>
+    <div className="px-4 py-5 sm:p-6">{children}</div>
   </div>
 );
 
 const Modal = ({ isOpen, onClose, title, children, size = "md" }) => {
   if (!isOpen) return null;
-
   const sizeClasses = { sm: "max-w-sm", md: "max-w-md", lg: "max-w-lg", xl: "max-w-xl" };
-
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-60 transition-opacity duration-300 ease-in-out" onClick={onClose}>
-      <div className={`bg-[${brandColors.surface}] rounded-xl shadow-xl p-6 m-4 ${sizeClasses[size]} w-full transform transition-all duration-300 ease-in-out scale-95 opacity-0 animate-modalShow`} onClick={e => e.stopPropagation()}>
+      <div className={`bg-brand-surface rounded-xl shadow-xl p-6 m-4 ${sizeClasses[size]} w-full transform transition-all duration-300 ease-in-out scale-95 opacity-0 animate-modalShow`} onClick={e => e.stopPropagation()}>
         <div className="flex justify-between items-center mb-4">
-          <h3 className={`text-xl font-semibold text-[${brandColors.text}]`}>{title}</h3>
-          <button onClick={onClose} className={`text-[${brandColors.textLight}] hover:text-[${brandColors.text}]`}>
-            <XCircle size={24} />
-          </button>
+          <h3 className="text-xl font-semibold text-brand-text">{title}</h3>
+          <button onClick={onClose} className="text-brand-textLight hover:text-brand-text"><XCircle size={24} /></button>
         </div>
         <div>{children}</div>
       </div>
@@ -300,7 +216,6 @@ const Modal = ({ isOpen, onClose, title, children, size = "md" }) => {
   );
 };
 
-// --- Page Components ---
 const LoginPage = ({ setCurrentPage }) => {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
@@ -323,49 +238,28 @@ const LoginPage = ({ setCurrentPage }) => {
   };
 
   return (
-    <div className={`min-h-screen flex items-center justify-center bg-[${brandColors.background}] py-12 px-4 sm:px-6 lg:px-8`}>
+    <div className="min-h-screen flex items-center justify-center bg-brand-background py-12 px-4 sm:px-6 lg:px-8">
       <div className="max-w-md w-full space-y-8">
         <div>
-          <img 
-            src={`https://placehold.co/64x64/${brandColors.background.substring(1)}/${brandColors.text.substring(1)}?text=Logo`} 
-            alt="Little Steps Logo" 
-            className="mx-auto h-16 w-16 rounded-full" 
-          />
-          <h2 className={`mt-6 text-center text-3xl font-extrabold text-[${brandColors.text}]`}>
+          <img src={`https://placehold.co/64x64/FFF7ED/654321?text=LS`} alt="Little Steps Logo" className="mx-auto h-16 w-16 rounded-full" />
+          <h2 className="mt-6 text-center text-3xl font-extrabold text-brand-text">
             Sign in to Little Steps
           </h2>
         </div>
         <Card>
           <form onSubmit={handleSubmit} className="space-y-6">
             <MessageBox message={error} type="error" onDismiss={() => setError('')} />
-            <InputField
-              id="username"
-              label="Username"
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
-              placeholder="your_username"
-              required
-              icon={<User />}
-            />
-            <InputField
-              id="password"
-              label="Password"
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="••••••••"
-              required
-              icon={<LogIn className="transform rotate-90"/>}
-            />
+            <InputField id="username" label="Username" value={username} onChange={(e) => setUsername(e.target.value)} placeholder="your_username" required icon={<User />} />
+            <InputField id="password" label="Password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" required icon={<LogIn className="transform rotate-90"/>} />
             <div>
               <Button type="submit" fullWidth disabled={isLoading} iconLeft={<LogIn size={18}/>}>
                 {isLoading ? 'Signing in...' : 'Sign in'}
               </Button>
             </div>
           </form>
-          <p className={`mt-6 text-center text-sm text-[${brandColors.textLight}]`}>
+          <p className="mt-6 text-center text-sm text-brand-textLight">
             Not a member?{' '}
-            <button onClick={() => setCurrentPage('register')} className={`font-medium text-[${brandColors.primary}] hover:text-[${brandColors.primaryHover}]`}>
+            <button onClick={() => setCurrentPage('register')} className="font-medium text-brand-primary hover:text-brand-primaryHover">
               Register here
             </button>
           </p>
@@ -411,17 +305,11 @@ const RegisterPage = ({ setCurrentPage }) => {
   };
 
   return (
-    <div className={`min-h-screen flex items-center justify-center bg-[${brandColors.background}] py-12 px-4 sm:px-6 lg:px-8`}>
+    <div className="min-h-screen flex items-center justify-center bg-brand-background py-12 px-4 sm:px-6 lg:px-8">
       <div className="max-w-md w-full space-y-8">
         <div>
-          <img 
-            src={`https://placehold.co/56x56/${brandColors.background.substring(1)}/${brandColors.text.substring(1)}?text=Logo`} 
-            alt="Little Steps Logo" 
-            className="mx-auto h-14 w-14 rounded-full" 
-          />
-          <h2 className={`mt-6 text-center text-3xl font-extrabold text-[${brandColors.text}]`}>
-            Create your account
-          </h2>
+          <img src={`https://placehold.co/56x56/FFF7ED/654321?text=LS`} alt="Little Steps Logo" className="mx-auto h-14 w-14 rounded-full" />
+          <h2 className="mt-6 text-center text-3xl font-extrabold text-brand-text">Create your account</h2>
         </div>
         <Card>
           <form onSubmit={handleSubmit} className="space-y-6">
@@ -433,8 +321,8 @@ const RegisterPage = ({ setCurrentPage }) => {
             <InputField id="last_name" label="Last Name" name="last_name" value={formData.last_name} onChange={handleChange} required />
             <InputField id="password" label="Password" name="password" type="password" value={formData.password} onChange={handleChange} required />
             <div>
-              <label htmlFor="role" className={`block text-sm font-medium text-[${brandColors.textLight}] mb-1`}>Role <span className={`text-[${brandColors.error}]`}>*</span></label>
-              <select id="role" name="role" value={formData.role} onChange={handleChange} className={`block w-full px-3 py-2 border border-[${brandColors.border}] bg-[${brandColors.surface}] text-[${brandColors.text}] rounded-lg shadow-sm focus:outline-none focus:ring-1 focus:ring-[${brandColors.secondary}] focus:border-[${brandColors.secondary}] sm:text-sm`}>
+              <label htmlFor="role" className="block text-sm font-medium text-brand-textLight mb-1">Role <span className="text-brand-error">*</span></label>
+              <select id="role" name="role" value={formData.role} onChange={handleChange} className="block w-full px-3 py-2 border border-brand-border bg-brand-surface text-brand-text rounded-lg shadow-sm focus:outline-none focus:ring-1 focus:ring-brand-secondary focus:border-brand-secondary sm:text-sm">
                 <option value="parent">Parent</option>
                 <option value="teacher">Teacher</option>
               </select>
@@ -443,9 +331,9 @@ const RegisterPage = ({ setCurrentPage }) => {
               {isLoading ? 'Registering...' : 'Register'}
             </Button>
           </form>
-          <p className={`mt-6 text-center text-sm text-[${brandColors.textLight}]`}>
+          <p className="mt-6 text-center text-sm text-brand-textLight">
             Already have an account?{' '}
-            <button onClick={() => setCurrentPage('login')} className={`font-medium text-[${brandColors.primary}] hover:text-[${brandColors.primaryHover}]`}>
+            <button onClick={() => setCurrentPage('login')} className="font-medium text-brand-primary hover:text-brand-primaryHover">
               Sign in
             </button>
           </p>
@@ -479,7 +367,7 @@ const DashboardPage = ({ setCurrentPage, setSelectedChildId }) => {
     fetchChildren();
   }, [user, apiRequest]);
 
-  if (isLoading && !children.length) return <div className="p-6 text-center text-[${brandColors.textLight}]">Loading dashboard...</div>;
+  if (isLoading && !children.length) return <div className="p-6 text-center text-brand-textLight">Loading dashboard...</div>;
 
   const handleViewChildProfile = (childId) => {
     setSelectedChildId(childId);
@@ -488,7 +376,7 @@ const DashboardPage = ({ setCurrentPage, setSelectedChildId }) => {
 
   return (
     <div className="p-6 space-y-6">
-      <h1 className={`text-3xl font-bold text-[${brandColors.text}]`}>Welcome, {user?.firstName || user?.username}!</h1>
+      <h1 className="text-3xl font-bold text-brand-text">Welcome, {user?.firstName || user?.username}!</h1>
       <MessageBox message={error} type="error" onDismiss={() => setError('')} />
       
       <Card title={user?.role === 'parent' ? "Your Children" : "Linked Children"} className="mt-6">
@@ -503,19 +391,19 @@ const DashboardPage = ({ setCurrentPage, setSelectedChildId }) => {
           </Button>
         )}
 
-        {isLoading && <p className={`text-[${brandColors.textLight}]`}>Loading children...</p>}
+        {isLoading && <p className="text-brand-textLight">Loading children...</p>}
         {!isLoading && children.length === 0 && (
-          <p className={`text-[${brandColors.textLight}]`}>
+          <p className="text-brand-textLight">
             {user?.role === 'parent' ? "You haven't added any children yet." : "You are not linked to any children yet."}
           </p>
         )}
         {!isLoading && children.length > 0 && (
-          <ul className={`divide-y divide-[${brandColors.border}]`}>
+          <ul className="divide-y divide-brand-border">
             {children.map(child => (
               <li key={child.child_id || child.id} className="py-4 flex flex-col sm:flex-row items-start sm:items-center justify-between">
                 <div className="mb-2 sm:mb-0">
-                  <p className={`text-lg font-medium text-[${brandColors.primary}]`}>{child.name}</p>
-                  {child.group && <p className={`text-sm text-[${brandColors.textLight}]`}>Group: {child.group}</p>}
+                  <p className="text-lg font-medium text-brand-primary">{child.name}</p>
+                  {child.group && <p className="text-sm text-brand-textLight">Group: {child.group}</p>}
                 </div>
                 <Button onClick={() => handleViewChildProfile(child.child_id || child.id)} variant="secondary">
                   View Profile & Activities
@@ -557,15 +445,15 @@ const UserProfilePage = ({ setCurrentPage }) => {
     }
   };
   
-  if (!user) return <div className={`p-6 text-[${brandColors.textLight}]`}>Loading profile...</div>;
+  if (!user) return <div className="p-6 text-brand-textLight">Loading profile...</div>;
 
   return (
     <div className="p-6 space-y-6 max-w-2xl mx-auto">
-      <h1 className={`text-3xl font-bold text-[${brandColors.text}]`}>My Profile</h1>
+      <h1 className="text-3xl font-bold text-brand-text">My Profile</h1>
       <MessageBox message={message.text} type={message.type} onDismiss={() => setMessage({text:'', type:''})} />
       
       <Card title="User Information">
-        <div className={`space-y-3 text-[${brandColors.text}]`}>
+        <div className="space-y-3 text-brand-text">
           <p><strong>Username:</strong> {user.username}</p>
           <p><strong>Email:</strong> {user.email}</p>
           <p><strong>First Name:</strong> {user.firstName}</p>
@@ -618,13 +506,13 @@ const AddChildPage = ({ setCurrentPage }) => {
 
   return (
     <div className="p-6 max-w-lg mx-auto">
-      <h1 className={`text-2xl font-semibold text-[${brandColors.text}] mb-6`}>Add New Child</h1>
+      <h1 className="text-2xl font-semibold text-brand-text mb-6">Add New Child</h1>
       <Card>
         <MessageBox message={message.text} type={message.type} onDismiss={() => setMessage({text:'', type:''})} />
         {linkingCode && (
-          <div className={`my-4 p-3 bg-[${brandColors.infoBg}] border border-[${brandColors.info}] rounded-lg`}>
-            <p className={`font-semibold text-[${brandColors.info}]`}>Child Added! Share this Linking Code with Teachers:</p>
-            <p className={`text-lg font-mono bg-[${brandColors.surface}] p-2 rounded mt-1 break-all text-[${brandColors.text}]`}>{linkingCode}</p>
+          <div className="my-4 p-3 bg-brand-infoBg border border-brand-info rounded-lg">
+            <p className="font-semibold text-brand-info">Child Added! Share this Linking Code with Teachers:</p>
+            <p className="text-lg font-mono bg-brand-surface p-2 rounded mt-1 break-all text-brand-text">{linkingCode}</p>
           </div>
         )}
         <form onSubmit={handleSubmit} className="space-y-4">
@@ -633,8 +521,8 @@ const AddChildPage = ({ setCurrentPage }) => {
           <InputField id="group" name="group" label="Group/Class" value={formData.group} onChange={handleChange} />
           <InputField id="allergies" name="allergies" label="Allergies (comma-separated)" value={formData.allergies} onChange={handleChange} />
           <div>
-            <label htmlFor="notes" className={`block text-sm font-medium text-[${brandColors.textLight}] mb-1`}>Additional Notes</label>
-            <textarea id="notes" name="notes" rows="3" value={formData.notes} onChange={handleChange} className={`block w-full px-3 py-2 border border-[${brandColors.border}] bg-[${brandColors.surface}] text-[${brandColors.text}] rounded-lg shadow-sm focus:outline-none focus:ring-1 focus:ring-[${brandColors.secondary}] focus:border-[${brandColors.secondary}] sm:text-sm`}></textarea>
+            <label htmlFor="notes" className="block text-sm font-medium text-brand-textLight mb-1">Additional Notes</label>
+            <textarea id="notes" name="notes" rows="3" value={formData.notes} onChange={handleChange} className="block w-full px-3 py-2 border border-brand-border bg-brand-surface text-brand-text rounded-lg shadow-sm focus:outline-none focus:ring-1 focus:ring-brand-secondary focus:border-brand-secondary sm:text-sm"></textarea>
           </div>
           <div className="flex space-x-3 pt-2">
             <Button type="submit" disabled={isLoading} iconLeft={<PlusCircle size={18}/>}>
@@ -663,7 +551,7 @@ const LinkChildPage = ({ setCurrentPage }) => {
       setMessage({ text: 'Successfully linked to child!', type: 'success' });
       setLinkingCode('');
       setTimeout(() => setCurrentPage('dashboard'), 2000);
-    } catch (err) { // CORRECTED: Added opening curly brace for the catch block
+    } catch (err) { 
       setMessage({ text: err.message || 'Failed to link to child. Invalid or expired code.', type: 'error' });
     } finally {
       setIsLoading(false);
@@ -672,7 +560,7 @@ const LinkChildPage = ({ setCurrentPage }) => {
 
   return (
     <div className="p-6 max-w-md mx-auto">
-      <h1 className={`text-2xl font-semibold text-[${brandColors.text}] mb-6`}>Link to a Child</h1>
+      <h1 className="text-2xl font-semibold text-brand-text mb-6">Link to a Child</h1>
       <Card>
         <MessageBox message={message.text} type={message.type} onDismiss={() => setMessage({text:'', type:''})} />
         <form onSubmit={handleSubmit} className="space-y-4">
@@ -793,22 +681,22 @@ const ChildProfilePage = ({ setCurrentPage, childId }) => {
     setTimeout(() => setMessage({text: '', type: ''}), 3000);
   };
 
-  if (isLoadingProfile && !childData) return <div className={`p-6 text-center text-[${brandColors.textLight}]`}>Loading child profile...</div>;
+  if (isLoadingProfile && !childData) return <div className="p-6 text-center text-brand-textLight">Loading child profile...</div>;
   if (error && !childData && !isLoadingProfile) return <div className="p-6"><MessageBox message={error} type="error" /></div>;
 
 
   return (
     <div className="p-6 space-y-6">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center">
-        <h1 className={`text-3xl font-bold text-[${brandColors.text}] mb-2 sm:mb-0`}>{childData?.name || "Child Profile"}</h1>
+        <h1 className="text-3xl font-bold text-brand-text mb-2 sm:mb-0">{childData?.name || "Child Profile"}</h1>
         <Button onClick={() => setCurrentPage('dashboard')} variant="secondary">Back to Dashboard</Button>
       </div>
       <MessageBox message={error && !message.text ? error : message.text} type={message.text ? message.type : 'error'} onDismiss={() => { setError(''); setMessage({text:'', type:''})}} />
 
       <Card title="Child Details">
-        {isLoadingProfile ? <p className={`text-[${brandColors.textLight}]`}>Loading details...</p> : childData ? (
+        {isLoadingProfile ? <p className="text-brand-textLight">Loading details...</p> : childData ? (
           !isEditing ? (
-            <div className={`space-y-2 text-[${brandColors.text}]`}>
+            <div className="space-y-2 text-brand-text">
               <p><strong>Name:</strong> {childData.name}</p>
               <p><strong>Birthday:</strong> {childData.birthday ? new Date(childData.birthday).toLocaleDateString() : 'N/A'}</p>
               <p><strong>Group:</strong> {childData.group || 'N/A'}</p>
@@ -825,8 +713,8 @@ const ChildProfilePage = ({ setCurrentPage, childId }) => {
               <InputField id="group" name="group" label="Group" value={editableChildData.group || ''} onChange={handleInputChange} />
               <InputField id="allergies" name="allergies" label="Allergies" value={editableChildData.allergies || ''} onChange={handleInputChange} />
               <div>
-                <label htmlFor="notes" className={`block text-sm font-medium text-[${brandColors.textLight}] mb-1`}>Notes</label>
-                <textarea id="notes" name="notes" rows="3" value={editableChildData.notes || ''} onChange={handleInputChange} className={`block w-full px-3 py-2 border border-[${brandColors.border}] bg-[${brandColors.surface}] text-[${brandColors.text}] rounded-lg shadow-sm focus:outline-none focus:ring-1 focus:ring-[${brandColors.secondary}] focus:border-[${brandColors.secondary}] sm:text-sm`}></textarea>
+                <label htmlFor="notes" className="block text-sm font-medium text-brand-textLight mb-1">Notes</label>
+                <textarea id="notes" name="notes" rows="3" value={editableChildData.notes || ''} onChange={handleInputChange} className="block w-full px-3 py-2 border border-brand-border bg-brand-surface text-brand-text rounded-lg shadow-sm focus:outline-none focus:ring-1 focus:ring-brand-secondary focus:border-brand-secondary sm:text-sm"></textarea>
               </div>
               <div className="flex space-x-2">
                 <Button onClick={handleSaveChanges}>Save Changes</Button>
@@ -834,15 +722,15 @@ const ChildProfilePage = ({ setCurrentPage, childId }) => {
               </div>
             </div>
           )
-        ) : <p className={`text-[${brandColors.textLight}]`}>No child data available.</p>}
+        ) : <p className="text-brand-textLight">No child data available.</p>}
       </Card>
 
       <Card title="Log New Activity">
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
-          <Button onClick={() => openLogActivityModal('meal')} iconLeft={<Sun size={18} className={`text-[${brandColors.primary}]`}/>} fullWidth>Log Meal</Button>
-          <Button onClick={() => openLogActivityModal('nap')} iconLeft={<Moon size={18} className={`text-[${brandColors.primary}]`}/>} fullWidth>Log Nap</Button>
-          <Button onClick={() => openLogActivityModal('drawing')} iconLeft={<ImageIcon size={18} className={`text-[${brandColors.primary}]`}/>} fullWidth>Log Drawing</Button>
-          <Button onClick={() => openLogActivityModal('behavior')} iconLeft={<Award size={18} className={`text-[${brandColors.primary}]`}/>} fullWidth>Log Behavior</Button>
+          <Button onClick={() => openLogActivityModal('meal')} iconLeft={<Sun size={18} className="text-brand-primary"/>} fullWidth>Log Meal</Button>
+          <Button onClick={() => openLogActivityModal('nap')} iconLeft={<Moon size={18} className="text-brand-primary"/>} fullWidth>Log Nap</Button>
+          <Button onClick={() => openLogActivityModal('drawing')} iconLeft={<ImageIcon size={18} className="text-brand-primary"/>} fullWidth>Log Drawing</Button>
+          <Button onClick={() => openLogActivityModal('behavior')} iconLeft={<Award size={18} className="text-brand-primary"/>} fullWidth>Log Behavior</Button>
         </div>
       </Card>
       
@@ -946,8 +834,8 @@ const LogActivityModal = ({ isOpen, onClose, activityType, childId, onActivityLo
             <InputField id="endTime" name="endTime" label="End Time" type="datetime-local" value={formData.endTime || ''} onChange={handleChange} required />
             <div className="mb-4">
               <label className="flex items-center">
-                <input type="checkbox" name="wokeUpDuring" checked={!!formData.wokeUpDuring} onChange={handleChange} className={`form-checkbox h-5 w-5 text-[${brandColors.primary}] rounded focus:ring-[${brandColors.secondary}] border-[${brandColors.border}] bg-[${brandColors.surface}]`} />
-                <span className={`ml-2 text-sm text-[${brandColors.textLight}]`}>Woke up during nap?</span>
+                <input type="checkbox" name="wokeUpDuring" checked={!!formData.wokeUpDuring} onChange={handleChange} className="form-checkbox h-5 w-5 text-brand-primary rounded focus:ring-brand-secondary border-brand-border bg-brand-surface" />
+                <span className="ml-2 text-sm text-brand-textLight">Woke up during nap?</span>
               </label>
             </div>
             <InputField id="notes" name="notes" label="Notes (optional)" value={formData.notes || ''} onChange={handleChange} />
@@ -968,8 +856,8 @@ const LogActivityModal = ({ isOpen, onClose, activityType, childId, onActivityLo
             <InputField id="date" name="date" label="Date" type="date" value={formData.date || ''} onChange={handleChange} required />
             <InputField id="activities" name="activities" label="Activities (comma-separated)" value={formData.activities || ''} onChange={handleChange} placeholder="e.g., Circle time, Outdoor play" required />
             <div className="mb-4">
-                <label htmlFor="grade" className={`block text-sm font-medium text-[${brandColors.textLight}] mb-1`}>Grade <span className={`text-[${brandColors.error}]`}>*</span></label>
-                <select id="grade" name="grade" value={formData.grade || 'Good'} onChange={handleChange} className={`block w-full px-3 py-2 border border-[${brandColors.border}] bg-[${brandColors.surface}] text-[${brandColors.text}] rounded-lg shadow-sm focus:outline-none focus:ring-1 focus:ring-[${brandColors.secondary}] focus:border-[${brandColors.secondary}] sm:text-sm`}>
+                <label htmlFor="grade" className="block text-sm font-medium text-brand-textLight mb-1">Grade <span className="text-brand-error">*</span></label>
+                <select id="grade" name="grade" value={formData.grade || 'Good'} onChange={handleChange} className="block w-full px-3 py-2 border border-brand-border bg-brand-surface text-brand-text rounded-lg shadow-sm focus:outline-none focus:ring-1 focus:ring-brand-secondary focus:border-brand-secondary sm:text-sm">
                     <option value="Excellent">Excellent</option>
                     <option value="Good">Good</option>
                     <option value="Needs Improvement">Needs Improvement</option>
@@ -979,7 +867,7 @@ const LogActivityModal = ({ isOpen, onClose, activityType, childId, onActivityLo
           </>
         );
       default:
-        return <p className={`text-[${brandColors.textLight}]`}>Unknown activity type.</p>;
+        return <p className="text-brand-textLight">Unknown activity type.</p>;
     }
   };
 
@@ -1003,8 +891,8 @@ const LogActivityModal = ({ isOpen, onClose, activityType, childId, onActivityLo
 const ActivityFeed = ({ activities, isLoading }) => {
   const [openActivityId, setOpenActivityId] = useState(null);
 
-  if (isLoading) return <div className={`p-4 text-center text-[${brandColors.textLight}]`}>Loading activities...</div>;
-  if (!activities || activities.length === 0) return <Card title="Activity Feed"><p className={`text-[${brandColors.textLight}]`}>No activities logged yet for this child.</p></Card>;
+  if (isLoading) return <div className="p-4 text-center text-brand-textLight">Loading activities...</div>;
+  if (!activities || activities.length === 0) return <Card title="Activity Feed"><p className="text-brand-textLight">No activities logged yet for this child.</p></Card>;
 
   const toggleActivityDetails = (activityId) => {
     setOpenActivityId(openActivityId === activityId ? null : activityId);
@@ -1012,11 +900,11 @@ const ActivityFeed = ({ activities, isLoading }) => {
   
   const getIconForActivity = (type) => {
     switch(type) {
-      case 'meal': return <Sun className={`text-[${brandColors.secondary}]`} />;
-      case 'nap': return <Moon className={`text-[${brandColors.info}]`} />; 
-      case 'drawing': return <ImageIcon className={`text-[${brandColors.primary}]`} />;
-      case 'behavior': return <Award className={`text-[${brandColors.success}]`} />;
-      default: return <BookOpen className={`text-[${brandColors.textLight}]`} />;
+      case 'meal': return <Sun className="text-brand-secondary" />;
+      case 'nap': return <Moon className="text-brand-info" />; 
+      case 'drawing': return <ImageIcon className="text-brand-primary" />;
+      case 'behavior': return <Award className="text-brand-success" />;
+      default: return <BookOpen className="text-brand-textLight" />;
     }
   };
 
@@ -1024,21 +912,21 @@ const ActivityFeed = ({ activities, isLoading }) => {
     <Card title="Activity Feed">
       <ul className="space-y-4">
         {activities.map(activity => (
-          <li key={activity.activity_id || activity.id} className={`bg-[${brandColors.background}] p-4 rounded-lg shadow-sm border border-[${brandColors.border}]`}>
+          <li key={activity.activity_id || activity.id} className="bg-brand-background p-4 rounded-lg shadow-sm border border-brand-border">
             <div className="flex items-center justify-between cursor-pointer" onClick={() => toggleActivityDetails(activity.activity_id || activity.id)}>
               <div className="flex items-center">
                 <span className="mr-3">{getIconForActivity(activity.type)}</span>
-                <h3 className={`text-md font-semibold text-[${brandColors.primary}] capitalize`}>{activity.type}</h3>
-                <span className={`ml-3 text-sm text-[${brandColors.textLight}]`}>
+                <h3 className="text-md font-semibold text-brand-primary capitalize">{activity.type}</h3>
+                <span className="ml-3 text-sm text-brand-textLight">
                   {new Date(activity.timestamp || activity.start_time || activity.date).toLocaleString()}
                 </span>
               </div>
               {openActivityId === (activity.activity_id || activity.id) ? 
-                <ChevronUp size={20} className={`text-[${brandColors.textLight}]`} /> : 
-                <ChevronDown size={20} className={`text-[${brandColors.textLight}]`} />}
+                <ChevronUp size={20} className="text-brand-textLight" /> : 
+                <ChevronDown size={20} className="text-brand-textLight" />}
             </div>
             {openActivityId === (activity.activity_id || activity.id) && (
-              <div className={`mt-3 pl-8 text-sm text-[${brandColors.text}] space-y-1`}>
+              <div className="mt-3 pl-8 text-sm text-brand-text space-y-1">
                 {activity.notes && <p><strong>Notes:</strong> {activity.notes}</p>}
                 {activity.type === 'meal' && (<></>)}
                 {activity.type === 'nap' && (
@@ -1052,7 +940,7 @@ const ActivityFeed = ({ activities, isLoading }) => {
                   <>
                     {activity.title && <p><strong>Title:</strong> {activity.title}</p>}
                     {activity.description && <p><strong>Description:</strong> {activity.description}</p>}
-                    {activity.image_url && <p><strong>Image:</strong> <a href={activity.image_url} target="_blank" rel="noopener noreferrer" className={`text-[${brandColors.secondaryHover}] hover:underline`}>View Image</a></p>}
+                    {activity.image_url && <p><strong>Image:</strong> <a href={activity.image_url} target="_blank" rel="noopener noreferrer" className="text-brand-secondaryHover hover:underline">View Image</a></p>}
                   </>
                 )}
                 {activity.type === 'behavior' && (
@@ -1071,7 +959,6 @@ const ActivityFeed = ({ activities, isLoading }) => {
   );
 };
 
-// --- Navigation Bar Component ---
 const Navbar = ({ setCurrentPage }) => {
   const { user, logout } = useAuth();
 
@@ -1081,30 +968,26 @@ const Navbar = ({ setCurrentPage }) => {
   };
 
   return (
-    <nav className={`bg-[${brandColors.primary}] text-white shadow-lg`}>
+    <nav className="bg-brand-primary text-white shadow-lg">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-16">
           <div className="flex items-center">
             <button onClick={() => setCurrentPage(user ? 'dashboard' : 'login')} className="flex-shrink-0 flex items-center">
-              <img 
-                src={`https://placehold.co/40x40/${brandColors.primary.substring(1)}/FFFFFF?text=LS`}
-                alt="Little Steps Logo" 
-                className="h-10 w-10 mr-2 rounded-full"
-              />
+              <img src={`https://placehold.co/40x40/967259/FFFFFF?text=LS`} alt="Little Steps Logo" className="h-10 w-10 mr-2 rounded-full"/>
               <span className="font-semibold text-xl tracking-tight">Little Steps</span>
             </button>
           </div>
           <div className="flex items-center space-x-1 sm:space-x-2">
             {!user ? (
               <>
-                <Button onClick={() => setCurrentPage('login')} variant="ghost" className={`text-white hover:bg-[${brandColors.primaryHover}] px-2 sm:px-3`} iconLeft={<LogIn size={18}/>}>Login</Button>
-                <Button onClick={() => setCurrentPage('register')} variant="ghost" className={`text-white hover:bg-[${brandColors.primaryHover}] px-2 sm:px-3`} iconLeft={<UserPlus size={18}/>}>Register</Button>
+                <Button onClick={() => setCurrentPage('login')} variant="ghost" className="text-white hover:bg-brand-primaryHover px-2 sm:px-3" iconLeft={<LogIn size={18}/>}>Login</Button>
+                <Button onClick={() => setCurrentPage('register')} variant="ghost" className="text-white hover:bg-brand-primaryHover px-2 sm:px-3" iconLeft={<UserPlus size={18}/>}>Register</Button>
               </>
             ) : (
               <>
-                <Button onClick={() => setCurrentPage('dashboard')} variant="ghost" className={`text-white hover:bg-[${brandColors.primaryHover}] px-2 sm:px-3`} iconLeft={<LayoutDashboard size={18}/>}>Dashboard</Button>
-                <Button onClick={() => setCurrentPage('userProfile')} variant="ghost" className={`text-white hover:bg-[${brandColors.primaryHover}] px-2 sm:px-3`} iconLeft={<User size={18}/>}>Profile</Button>
-                <Button onClick={handleLogout} variant="ghost" className={`text-white hover:bg-[${brandColors.primaryHover}] px-2 sm:px-3`} iconLeft={<LogOut size={18}/>}>Logout</Button>
+                <Button onClick={() => setCurrentPage('dashboard')} variant="ghost" className="text-white hover:bg-brand-primaryHover px-2 sm:px-3" iconLeft={<LayoutDashboard size={18}/>}>Dashboard</Button>
+                <Button onClick={() => setCurrentPage('userProfile')} variant="ghost" className="text-white hover:bg-brand-primaryHover px-2 sm:px-3" iconLeft={<User size={18}/>}>Profile</Button>
+                <Button onClick={handleLogout} variant="ghost" className="text-white hover:bg-brand-primaryHover px-2 sm:px-3" iconLeft={<LogOut size={18}/>}>Logout</Button>
               </>
             )}
           </div>
@@ -1114,8 +997,6 @@ const Navbar = ({ setCurrentPage }) => {
   );
 };
 
-
-// --- Main App Component ---
 const App = () => {
   const [currentPage, setCurrentPage] = useState('login'); 
   const [selectedChildId, setSelectedChildId] = useState(null); 
@@ -1138,7 +1019,7 @@ const App = () => {
 
   const renderPage = () => {
     if (authIsLoading) {
-      return <div className="flex justify-center items-center h-screen"><p className={`text-xl text-[${brandColors.primary}]`}>Loading application...</p></div>;
+      return <div className="flex justify-center items-center h-screen"><p className="text-xl text-brand-primary">Loading application...</p></div>;
     }
 
     if (currentPage === 'login') return <LoginPage setCurrentPage={setCurrentPage} />;
@@ -1166,47 +1047,18 @@ const App = () => {
   };
 
   return (
-    <div className={`min-h-screen bg-[${brandColors.background}] font-sans`}>
+    // Using Tailwind class for body background from src/index.css or here
+    <div className="min-h-screen bg-brand-background font-sans"> 
       <Navbar setCurrentPage={setCurrentPage} />
       <main className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
         {renderPage()}
       </main>
-      <style jsx global>{`
-        body {
-          background-color: ${brandColors.background}; 
-        }
-        @keyframes modalShow {
-          0% { transform: scale(0.95); opacity: 0; }
-          100% { transform: scale(1); opacity: 1; }
-        }
-        .animate-modalShow {
-          animation: modalShow 0.3s forwards;
-        }
-        input[type="text"], input[type="password"], input[type="email"], input[type="url"], input[type="date"], input[type="datetime-local"], select, textarea {
-          border-radius: 0.5rem; 
-        }
-        ::-webkit-scrollbar {
-          width: 8px;
-          height: 8px;
-        }
-        ::-webkit-scrollbar-track {
-          background: ${brandColors.background};
-          border-radius: 10px;
-        }
-        ::-webkit-scrollbar-thumb {
-          background: ${brandColors.border};
-          border-radius: 10px;
-        }
-        ::-webkit-scrollbar-thumb:hover {
-          background: ${brandColors.textLight}; 
-        }
-      `}</style>
+      {/* Global styles like modal animations and scrollbars are now in src/index.css */}
     </div>
   );
 };
 
-// Entry point for the React application
-// Assuming this app.js is now in the src folder, and src/index.js imports it.
+// Assuming this app.js is in src/ and src/index.js imports it
 export default function Main() {
   return (
     <AuthProvider>
