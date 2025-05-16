@@ -2,11 +2,11 @@ import React, { useState, useEffect, createContext, useContext, useCallback } fr
 import { User, LogIn, UserPlus, LayoutDashboard, LogOut, BookOpen, Edit3, PlusCircle, Link2, Sun, Moon, Image as ImageIcon, Award, ChevronDown, ChevronUp, AlertTriangle, CheckCircle, InfoIcon, XCircle } from 'lucide-react';
 
 // Configuration for API base URLs
-// IMPORTANT: Replace these with your actual microservice URLs if they differ.
+// These will be relative paths to your Kong gateway
 const API_BASE_URLS = {
-  AUTH: 'http://localhost:5000', 
-  CHILD_PROFILE: 'http://localhost:5002',
-  ACTIVITY_LOG: 'http://localhost:5003',
+  AUTH: '/auth',             // Kong path for authentication service
+  CHILD_PROFILE: '/profiles',  // Kong path for child profile service
+  ACTIVITY_LOG: '',          // Endpoints for activity log will be full paths like /log/meal or /activities
 };
 
 // --- New Color Palette (Inspired by the Owl Image) ---
@@ -34,18 +34,24 @@ const brandColors = {
 const AuthContext = createContext(null);
 
 export const AuthProvider = ({ children }) => {
-  const [user, setUser] = useState(null); 
+  const [user, setUser] = useState(null);
   const [token, setToken] = useState(localStorage.getItem('accessToken'));
   const [refreshToken, setRefreshToken] = useState(localStorage.getItem('refreshToken'));
   const [isLoading, setIsLoading] = useState(true);
 
   // useCallback for apiRequest to memoize it
-  const apiRequest = useCallback(async (service, endpoint, method = 'GET', body = null, requiresAuth = true, customHeaders = {}) => {
-    const baseUrl = API_BASE_URLS[service];
-    if (!baseUrl) {
-      throw new Error(`Service URL for ${service} not configured.`);
+  const apiRequest = useCallback(async (serviceKey, endpoint, method = 'GET', body = null, requiresAuth = true, customHeaders = {}) => {
+    let baseUrl = API_BASE_URLS[serviceKey];
+
+    if (typeof baseUrl === 'undefined') { // Check if serviceKey is valid
+      throw new Error(`Service base path for ${serviceKey} not configured or invalid.`);
     }
-    const url = `${baseUrl}${endpoint}`;
+
+    // Construct the full path
+    // If baseUrl is empty (like for ACTIVITY_LOG), endpoint is the full path.
+    // Otherwise, combine baseUrl and endpoint.
+    const url = baseUrl ? `${baseUrl}${endpoint.startsWith('/') ? endpoint : '/' + endpoint}` : endpoint;
+
     const headers = {
       'Content-Type': 'application/json',
       ...customHeaders,
@@ -67,10 +73,13 @@ export const AuthProvider = ({ children }) => {
     try {
       const response = await fetch(url, config);
       if (response.status === 401 && requiresAuth) {
-        // Attempt to refresh token if a refresh token exists
         if (localStorage.getItem('refreshToken')) {
           try {
-            const refreshResponse = await fetch(`${API_BASE_URLS.AUTH}/auth/refresh`, {
+            // Construct refresh token URL
+            const refreshBaseUrl = API_BASE_URLS['AUTH'];
+            const refreshUrl = `${refreshBaseUrl}/refresh`; // Changed: /auth/refresh to /refresh
+
+            const refreshResponse = await fetch(refreshUrl, {
               method: 'POST',
               headers: {
                 'Content-Type': 'application/json',
@@ -81,25 +90,22 @@ export const AuthProvider = ({ children }) => {
               const { access_token } = await refreshResponse.json();
               setToken(access_token);
               localStorage.setItem('accessToken', access_token);
-              // Retry original request with new token
               headers['Authorization'] = `Bearer ${access_token}`;
               const retryResponse = await fetch(url, { ...config, headers });
               if (!retryResponse.ok) {
                 const errorData = await retryResponse.json().catch(() => ({ message: retryResponse.statusText }));
                 throw new Error(errorData.message || `HTTP error! status: ${retryResponse.status}`);
               }
-              return retryResponse.json().catch(() => ({})); // Handle cases where response might be empty JSON
+              return retryResponse.json().catch(() => ({}));
             } else {
-              // Refresh failed, logout user
-              logout(); 
+              logout();
               throw new Error("Session expired. Please login again.");
             }
           } catch (refreshError) {
-            logout(); // Logout on any error during refresh
+            logout();
             throw refreshError;
           }
         } else {
-          // No refresh token, logout user
           logout();
           throw new Error("Session expired. Please login again.");
         }
@@ -108,26 +114,25 @@ export const AuthProvider = ({ children }) => {
         const errorData = await response.json().catch(() => ({ message: response.statusText }));
         throw new Error(errorData.message || `HTTP error! status: ${response.status}`);
       }
-      // Handle 204 No Content or empty response body
       if (response.status === 204 || response.headers.get("content-length") === "0") {
-        return {}; 
+        return {};
       }
       return response.json();
     } catch (error) {
       console.error(`API Request Error (${method} ${url}):`, error);
-      throw error; // Re-throw to be caught by calling function
+      throw error;
     }
-  }, [token]); // Add logout to dependency array if it's used inside and defined outside
+  }, [token]); // Removed 'logout' from dependency array as it's defined below and wrapped in useCallback itself
 
 
   const login = async (username, password) => {
     try {
-      const data = await apiRequest('AUTH', '/auth/login', 'POST', { username, password }, false);
+      // Changed: endpoint from '/auth/login' to '/login'
+      const data = await apiRequest('AUTH', '/login', 'POST', { username, password }, false);
       setToken(data.access_token);
       setRefreshToken(data.refresh_token);
       localStorage.setItem('accessToken', data.access_token);
       localStorage.setItem('refreshToken', data.refresh_token);
-      // Fetch user details after successful login
       await fetchUserDetails(data.access_token);
       return data;
     } catch (error) {
@@ -136,11 +141,11 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  // useCallback for fetchUserDetails
   const fetchUserDetails = useCallback(async (currentToken) => {
     if (!currentToken) return;
     try {
-      const userData = await apiRequest('AUTH', '/auth/me', 'GET', null, true, { 'Authorization': `Bearer ${currentToken}`});
+      // Changed: endpoint from '/auth/me' to '/me'
+      const userData = await apiRequest('AUTH', '/me', 'GET', null, true, { 'Authorization': `Bearer ${currentToken}`});
       setUser({
         id: userData.user_id,
         username: userData.username,
@@ -151,35 +156,32 @@ export const AuthProvider = ({ children }) => {
       });
     } catch (error) {
       console.error("Failed to fetch user details:", error);
-      // If fetching user details fails (e.g. token expired), log out
       logout();
     }
-  }, [apiRequest]); // Add logout to dependency array
+  }, [apiRequest]); // Removed 'logout' from dependency array
 
-
-  const logout = useCallback(() => { // Wrapped logout in useCallback
+  const logout = useCallback(() => {
     setUser(null);
     setToken(null);
     setRefreshToken(null);
     localStorage.removeItem('accessToken');
     localStorage.removeItem('refreshToken');
-    // Potentially call backend logout endpoint if it exists
-    // apiRequest('AUTH', '/auth/logout', 'POST', null, false).catch(e => console.warn("Logout API call failed or not implemented", e));
-  }, []); // No dependencies for this version of logout
+    // Optional: Call backend logout if needed
+    // apiRequest('AUTH', '/logout', 'POST', null, false).catch(e => console.warn("Logout API call failed", e));
+  }, []);
 
-  // Effect to run on initial app load to check for existing token
   useEffect(() => {
     const initializeAuth = async () => {
       setIsLoading(true);
       const storedToken = localStorage.getItem('accessToken');
       if (storedToken) {
-        setToken(storedToken); 
+        setToken(storedToken);
         await fetchUserDetails(storedToken);
       }
       setIsLoading(false);
     };
     initializeAuth();
-  }, [fetchUserDetails]); // fetchUserDetails is now memoized
+  }, [fetchUserDetails]);
 
 
   return (
@@ -195,7 +197,7 @@ export const useAuth = () => useContext(AuthContext);
 const MessageBox = ({ message, type, onDismiss }) => {
   if (!message) return null;
 
-  const baseClasses = "p-4 mb-4 rounded-lg shadow-md flex items-center text-sm"; // Added text-sm
+  const baseClasses = "p-4 mb-4 rounded-lg shadow-md flex items-center text-sm";
   const typeInfo = {
     success: { bg: brandColors.successBg, border: brandColors.success, text: brandColors.success, IconCmp: CheckCircle },
     error: { bg: brandColors.errorBg, border: brandColors.error, text: brandColors.error, IconCmp: XCircle },
@@ -229,7 +231,7 @@ const InputField = ({ id, label, type = "text", value, onChange, placeholder, er
     <label htmlFor={id} className={`block text-sm font-medium text-[${brandColors.textLight}] mb-1`}>
       {label} {required && <span className={`text-[${brandColors.error}]`}>*</span>}
     </label>
-    <div className="relative rounded-lg shadow-sm"> {/* Changed to rounded-lg */}
+    <div className="relative rounded-lg shadow-sm">
       {icon && <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">{React.cloneElement(icon, { className: `h-5 w-5 text-[${brandColors.textLight}]` })}</div>}
       <input
         type={type}
@@ -328,7 +330,6 @@ const LoginPage = ({ setCurrentPage }) => {
     <div className={`min-h-screen flex items-center justify-center bg-[${brandColors.background}] py-12 px-4 sm:px-6 lg:px-8`}>
       <div className="max-w-md w-full space-y-8">
         <div>
-          {/* User's logo placeholder */}
           <img 
             src={`https://placehold.co/64x64/${brandColors.background.substring(1)}/${brandColors.text.substring(1)}?text=Logo`} 
             alt="Little Steps Logo" 
@@ -402,7 +403,8 @@ const RegisterPage = ({ setCurrentPage }) => {
       return;
     }
     try {
-      await apiRequest('AUTH', '/auth/register', 'POST', formData, false);
+      // Changed: endpoint from '/auth/register' to '/register'
+      await apiRequest('AUTH', '/register', 'POST', formData, false);
       setSuccess('Registration successful! Please login.');
       setFormData({ username: '', password: '', role: 'parent', email: '', first_name: '', last_name: '' });
       setTimeout(() => setCurrentPage('login'), 2000);
@@ -417,7 +419,6 @@ const RegisterPage = ({ setCurrentPage }) => {
     <div className={`min-h-screen flex items-center justify-center bg-[${brandColors.background}] py-12 px-4 sm:px-6 lg:px-8`}>
       <div className="max-w-md w-full space-y-8">
         <div>
-          {/* User's logo placeholder */}
           <img 
             src={`https://placehold.co/56x56/${brandColors.background.substring(1)}/${brandColors.text.substring(1)}?text=Logo`} 
             alt="Little Steps Logo" 
@@ -471,7 +472,8 @@ const DashboardPage = ({ setCurrentPage, setSelectedChildId }) => {
       setIsLoading(true);
       setError('');
       try {
-        const data = await apiRequest('CHILD_PROFILE', '/profiles/children', 'GET');
+        // Changed: endpoint from '/profiles/children' to '/children'
+        const data = await apiRequest('CHILD_PROFILE', '/children', 'GET');
         setChildren(Array.isArray(data) ? data : (data.children || [])); 
       } catch (err) {
         setError(err.message || 'Failed to load children data.');
@@ -550,7 +552,8 @@ const UserProfilePage = ({ setCurrentPage }) => {
         return;
     }
     try {
-      await apiRequest('AUTH', '/auth/change-password', 'POST', { old_password: oldPassword, new_password: newPassword });
+      // Changed: endpoint from '/auth/change-password' to '/change-password'
+      await apiRequest('AUTH', '/change-password', 'POST', { old_password: oldPassword, new_password: newPassword });
       setMessage({ text: 'Password changed successfully!', type: 'success' });
       setOldPassword('');
       setNewPassword('');
@@ -609,7 +612,8 @@ const AddChildPage = ({ setCurrentPage }) => {
     setLinkingCode('');
     setIsLoading(true);
     try {
-      const response = await apiRequest('CHILD_PROFILE', '/profiles/children', 'POST', formData);
+      // Changed: endpoint from '/profiles/children' to '/children'
+      const response = await apiRequest('CHILD_PROFILE', '/children', 'POST', formData);
       setMessage({ text: 'Child added successfully!', type: 'success' });
       setLinkingCode(response.linking_code);
       setFormData({ name: '', birthday: '', group: '', allergies: '', notes: '' }); 
@@ -626,7 +630,7 @@ const AddChildPage = ({ setCurrentPage }) => {
       <Card>
         <MessageBox message={message.text} type={message.type} onDismiss={() => setMessage({text:'', type:''})} />
         {linkingCode && (
-          <div className={`my-4 p-3 bg-[${brandColors.infoBg}] border border-[${brandColors.info}] rounded-lg`}> {/* rounded-lg */}
+          <div className={`my-4 p-3 bg-[${brandColors.infoBg}] border border-[${brandColors.info}] rounded-lg`}>
             <p className={`font-semibold text-[${brandColors.info}]`}>Child Added! Share this Linking Code with Teachers:</p>
             <p className={`text-lg font-mono bg-[${brandColors.surface}] p-2 rounded mt-1 break-all text-[${brandColors.text}]`}>{linkingCode}</p>
           </div>
@@ -663,12 +667,12 @@ const LinkChildPage = ({ setCurrentPage }) => {
     setMessage({ text: '', type: '' });
     setIsLoading(true);
     try {
-      await apiRequest('CHILD_PROFILE', '/profiles/children/link-supervisor', 'POST', { linking_code: linkingCode });
+      // Changed: endpoint from '/profiles/children/link-supervisor' to '/children/link-supervisor'
+      await apiRequest('CHILD_PROFILE', '/children/link-supervisor', 'POST', { linking_code: linkingCode });
       setMessage({ text: 'Successfully linked to child!', type: 'success' });
       setLinkingCode('');
       setTimeout(() => setCurrentPage('dashboard'), 2000);
-    } catch (err) {
-      setMessage({ text: err.message || 'Failed to link to child. Invalid or expired code.', type: 'error' });
+    } catch (err)      setMessage({ text: err.message || 'Failed to link to child. Invalid or expired code.', type: 'error' });
     } finally {
       setIsLoading(false);
     }
@@ -700,7 +704,7 @@ const ChildProfilePage = ({ setCurrentPage, childId }) => {
   const [isLoadingProfile, setIsLoadingProfile] = useState(true);
   const [isLoadingActivities, setIsLoadingActivities] = useState(true);
   const [error, setError] = useState('');
-  const [message, setMessage] = useState({text: '', type: ''}); // For success/error messages on this page
+  const [message, setMessage] = useState({text: '', type: ''});
   const [isEditing, setIsEditing] = useState(false);
   const [editableChildData, setEditableChildData] = useState(null);
   const [showLogActivityModal, setShowLogActivityModal] = useState(false);
@@ -717,9 +721,10 @@ const ChildProfilePage = ({ setCurrentPage, childId }) => {
     const fetchChildData = async () => {
       setIsLoadingProfile(true);
       setError('');
-      setMessage({text: '', type: ''}); // Clear previous messages
+      setMessage({text: '', type: ''});
       try {
-        const data = await apiRequest('CHILD_PROFILE', `/profiles/children/${childId}`, 'GET');
+        // Changed: endpoint from `/profiles/children/${childId}` to `/children/${childId}`
+        const data = await apiRequest('CHILD_PROFILE', `/children/${childId}`, 'GET');
         setChildData(data);
         setEditableChildData({...data}); 
       } catch (err) {
@@ -733,6 +738,7 @@ const ChildProfilePage = ({ setCurrentPage, childId }) => {
       setIsLoadingActivities(true);
       try {
         const params = new URLSearchParams({ child_id: childId });
+        // ACTIVITY_LOG base is '', endpoint is `/activities...` which is correct
         const data = await apiRequest('ACTIVITY_LOG', `/activities?${params.toString()}`, 'GET');
         setActivities(Array.isArray(data) ? data : (data.activities || [])); 
       } catch (err) {
@@ -759,11 +765,11 @@ const ChildProfilePage = ({ setCurrentPage, childId }) => {
     setMessage({text: '', type: ''});
     try {
       const dataToUpdate = { ...editableChildData };
-      // Ensure birthday is in YYYY-MM-DD format if it exists
       if (dataToUpdate.birthday && dataToUpdate.birthday.includes('T')) {
           dataToUpdate.birthday = dataToUpdate.birthday.split('T')[0];
       }
-      const updatedChild = await apiRequest('CHILD_PROFILE', `/profiles/children/${childId}`, 'PUT', dataToUpdate);
+      // Changed: endpoint from `/profiles/children/${childId}` to `/children/${childId}`
+      const updatedChild = await apiRequest('CHILD_PROFILE', `/children/${childId}`, 'PUT', dataToUpdate);
       setChildData(updatedChild); 
       setEditableChildData({...updatedChild});
       setIsEditing(false);
@@ -782,11 +788,11 @@ const ChildProfilePage = ({ setCurrentPage, childId }) => {
   const onActivityLogged = () => {
     setShowLogActivityModal(false);
     setMessage({text: "Activity logged successfully!", type: "success"});
-    // Refresh activities
     setIsLoadingActivities(true);
     const fetchActivitiesAgain = async () => {
       try {
         const params = new URLSearchParams({ child_id: childId });
+        // ACTIVITY_LOG base is '', endpoint is `/activities...` which is correct
         const data = await apiRequest('ACTIVITY_LOG', `/activities?${params.toString()}`, 'GET');
         setActivities(Array.isArray(data) ? data : (data.activities || []));
       } catch (err) {
@@ -796,12 +802,10 @@ const ChildProfilePage = ({ setCurrentPage, childId }) => {
       }
     };
     fetchActivitiesAgain();
-     // Clear message after a few seconds
     setTimeout(() => setMessage({text: '', type: ''}), 3000);
   };
 
   if (isLoadingProfile && !childData) return <div className={`p-6 text-center text-[${brandColors.textLight}]`}>Loading child profile...</div>;
-  // Show general page error if profile loading failed completely
   if (error && !childData && !isLoadingProfile) return <div className="p-6"><MessageBox message={error} type="error" /></div>;
 
 
@@ -811,9 +815,7 @@ const ChildProfilePage = ({ setCurrentPage, childId }) => {
         <h1 className={`text-3xl font-bold text-[${brandColors.text}] mb-2 sm:mb-0`}>{childData?.name || "Child Profile"}</h1>
         <Button onClick={() => setCurrentPage('dashboard')} variant="secondary">Back to Dashboard</Button>
       </div>
-      {/* Display general errors or success messages for the page */}
       <MessageBox message={error && !message.text ? error : message.text} type={message.text ? message.type : 'error'} onDismiss={() => { setError(''); setMessage({text:'', type:''})}} />
-
 
       <Card title="Child Details">
         {isLoadingProfile ? <p className={`text-[${brandColors.textLight}]`}>Loading details...</p> : childData ? (
@@ -824,7 +826,6 @@ const ChildProfilePage = ({ setCurrentPage, childId }) => {
               <p><strong>Group:</strong> {childData.group || 'N/A'}</p>
               <p><strong>Allergies:</strong> {childData.allergies || 'None'}</p>
               <p><strong>Notes:</strong> {childData.notes || 'None'}</p>
-              {/* Basic auth check, real auth is backend-side */}
               {(user?.role === 'parent' || user?.id === childData.created_by_parent_id) && 
                 <Button onClick={handleEditToggle} iconLeft={<Edit3 size={16}/>} variant="secondary" className="mt-2">Edit Profile</Button>
               }
@@ -873,13 +874,12 @@ const ChildProfilePage = ({ setCurrentPage, childId }) => {
 const LogActivityModal = ({ isOpen, onClose, activityType, childId, onActivityLogged }) => {
   const { apiRequest } = useAuth();
   const [formData, setFormData] = useState({});
-  const [message, setMessage] = useState({ text: '', type: '' }); // For modal-specific messages
+  const [message, setMessage] = useState({ text: '', type: '' });
   const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
     if (isOpen) {
       setMessage({ text: '', type: '' }); 
-      // Default form data based on activity type
       switch (activityType) {
         case 'meal':
           setFormData({ timestamp: new Date().toISOString().slice(0,16), notes: '' });
@@ -909,35 +909,34 @@ const LogActivityModal = ({ isOpen, onClose, activityType, childId, onActivityLo
     setMessage({ text: '', type: '' });
     setIsLoading(true);
     
-    let endpoint = '';
+    let endpoint = ''; // This will be the full path like /log/meal
     let payload = { ...formData, childId }; 
 
     try {
       switch (activityType) {
         case 'meal':
-          endpoint = '/log/meal';
+          endpoint = '/log/meal'; // Full path for Kong
           payload = { childId, timestamp: new Date(formData.timestamp).toISOString(), notes: formData.notes };
           break;
         case 'nap':
-          endpoint = '/log/nap';
+          endpoint = '/log/nap'; // Full path for Kong
           payload = { childId, startTime: new Date(formData.startTime).toISOString(), endTime: new Date(formData.endTime).toISOString(), wokeUpDuring: !!formData.wokeUpDuring, notes: formData.notes };
           break;
         case 'drawing':
-          endpoint = '/log/drawing';
+          endpoint = '/log/drawing'; // Full path for Kong
           payload = { childId, timestamp: new Date(formData.timestamp).toISOString(), photoUrl: formData.photoUrl, title: formData.title, description: formData.description };
           break;
         case 'behavior':
-          endpoint = '/log/behavior';
+          endpoint = '/log/behavior'; // Full path for Kong
           payload = { childId, date: formData.date, activities: formData.activities.split(',').map(s => s.trim()).filter(s => s), grade: formData.grade, notes: formData.notes };
           break;
         default:
           throw new Error("Invalid activity type");
       }
-
+      // ACTIVITY_LOG base is '', so endpoint is the full path
       await apiRequest('ACTIVITY_LOG', endpoint, 'POST', payload);
-      // No setMessage here, parent (ChildProfilePage) will show it via onActivityLogged
       setIsLoading(false);
-      onActivityLogged(); // This will close modal and refresh data in parent
+      onActivityLogged(); 
     } catch (err) {
       setMessage({ text: err.message || `Failed to log ${activityType}.`, type: 'error' });
       setIsLoading(false);
@@ -1054,7 +1053,7 @@ const ActivityFeed = ({ activities, isLoading }) => {
             {openActivityId === (activity.activity_id || activity.id) && (
               <div className={`mt-3 pl-8 text-sm text-[${brandColors.text}] space-y-1`}>
                 {activity.notes && <p><strong>Notes:</strong> {activity.notes}</p>}
-                {activity.type === 'meal' && (<></>)} {/* Meal notes already covered */}
+                {activity.type === 'meal' && (<></>)}
                 {activity.type === 'nap' && (
                   <>
                     <p><strong>Start:</strong> {new Date(activity.start_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
@@ -1100,16 +1099,15 @@ const Navbar = ({ setCurrentPage }) => {
         <div className="flex items-center justify-between h-16">
           <div className="flex items-center">
             <button onClick={() => setCurrentPage(user ? 'dashboard' : 'login')} className="flex-shrink-0 flex items-center">
-              {/* User's logo placeholder - Remember to replace src with your actual logo path or URL */}
               <img 
-                src={`https://placehold.co/40x40/${brandColors.primary.substring(1)}/FFFFFF?text=LS`} // Placeholder: LS for Little Steps
+                src={`https://placehold.co/40x40/${brandColors.primary.substring(1)}/FFFFFF?text=LS`}
                 alt="Little Steps Logo" 
-                className="h-10 w-10 mr-2 rounded-full" // Added rounded-full for circular logos
+                className="h-10 w-10 mr-2 rounded-full"
               />
               <span className="font-semibold text-xl tracking-tight">Little Steps</span>
             </button>
           </div>
-          <div className="flex items-center space-x-1 sm:space-x-2"> {/* Reduced space for smaller screens */}
+          <div className="flex items-center space-x-1 sm:space-x-2">
             {!user ? (
               <>
                 <Button onClick={() => setCurrentPage('login')} variant="ghost" className={`text-white hover:bg-[${brandColors.primaryHover}] px-2 sm:px-3`} iconLeft={<LogIn size={18}/>}>Login</Button>
@@ -1136,16 +1134,13 @@ const App = () => {
   const [selectedChildId, setSelectedChildId] = useState(null); 
   const { user, isLoading: authIsLoading } = useAuth();
 
-  // Effect to handle page redirection based on auth state
   useEffect(() => {
-    if (!authIsLoading) { // Only run when auth loading is complete
+    if (!authIsLoading) {
         if (user) {
-            // If user is logged in and on login/register page, redirect to dashboard
             if (currentPage === 'login' || currentPage === 'register') {
                 setCurrentPage('dashboard');
             }
         } else {
-            // If user is not logged in and not on login/register, redirect to login
             if (currentPage !== 'register' && currentPage !== 'login') {
                 setCurrentPage('login');
             }
@@ -1159,13 +1154,10 @@ const App = () => {
       return <div className="flex justify-center items-center h-screen"><p className={`text-xl text-[${brandColors.primary}]`}>Loading application...</p></div>;
     }
 
-    // Public pages accessible without login
     if (currentPage === 'login') return <LoginPage setCurrentPage={setCurrentPage} />;
     if (currentPage === 'register') return <RegisterPage setCurrentPage={setCurrentPage} />;
 
-    // Protected pages - user must be logged in
     if (!user) {
-        // This should ideally be caught by the useEffect above, but as a fallback:
         return <LoginPage setCurrentPage={setCurrentPage} />;
     }
     
@@ -1181,7 +1173,6 @@ const App = () => {
       case 'childProfile':
         return <ChildProfilePage setCurrentPage={setCurrentPage} childId={selectedChildId} />;
       default:
-        // Fallback for unknown pages when logged in: redirect to dashboard
         setCurrentPage('dashboard'); 
         return <DashboardPage setCurrentPage={setCurrentPage} setSelectedChildId={setSelectedChildId} />;
     }
@@ -1204,11 +1195,9 @@ const App = () => {
         .animate-modalShow {
           animation: modalShow 0.3s forwards;
         }
-        /* More rounded corners for inputs globally */
         input[type="text"], input[type="password"], input[type="email"], input[type="url"], input[type="date"], input[type="datetime-local"], select, textarea {
-          border-radius: 0.5rem; /* Corresponds to rounded-lg */
+          border-radius: 0.5rem; 
         }
-        /* Style scrollbars for a softer look - WebKit browsers */
         ::-webkit-scrollbar {
           width: 8px;
           height: 8px;
@@ -1229,7 +1218,6 @@ const App = () => {
   );
 };
 
-// Entry point for the React application
 export default function Main() {
   return (
     <AuthProvider>
@@ -1237,4 +1225,3 @@ export default function Main() {
     </AuthProvider>
   );
 }
-

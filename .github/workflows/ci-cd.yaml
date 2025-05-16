@@ -1,0 +1,90 @@
+name: Frontend CI/CD
+
+on:
+  push:
+    branches:
+      - main # Or your primary development branch
+
+jobs:
+  build-and-push-docker-image:
+    name: Build and Push Docker Image
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }} # Use a Docker Hub Access Token
+
+      - name: Extract metadata (tags, labels) for Docker
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ secrets.DOCKERHUB_USERNAME }}/kindergarten-frontend # Replace with your Docker Hub username and desired image name
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: . # Build context is the root of your frontend repo
+          file: ./Dockerfile # Path to your Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # Optional: Deploy to Kubernetes (More advanced, requires careful setup)
+  # deploy-to-kubernetes:
+  #   name: Deploy to Kubernetes
+  #   runs-on: ubuntu-latest
+  #   needs: build-and-push-docker-image # Run after image is pushed
+  #   if: github.ref == 'refs/heads/main' # Only deploy from main branch
+
+  #   steps:
+  #     - name: Checkout deployment repository
+  #       uses: actions/checkout@v4
+  #       with:
+  #         repository: YOUR_GITHUB_USERNAME/YOUR_DEPLOYMENT_REPO_NAME # e.g., myuser/deployment
+  #         token: ${{ secrets.DEPLOYMENT_REPO_PAT }} # A Personal Access Token with repo write access
+
+      # - name: Set up Kustomize (if using Kustomize)
+      #   uses: imranismail/setup-kustomize@v2
+      #   # with:
+      #   #   kustomize-version: "v5.0.0"
+
+      # - name: Update Kubernetes manifest with new image tag
+      #   run: |
+      #     # Example using sed (simpler, but can be fragile)
+      #     # Assumes your image tag is the commit SHA
+      #     NEW_TAG=${{ github.sha }}
+      #     # Navigate to your frontend k8s manifest directory
+      #     cd k8s/frontend 
+      #     sed -i 's|image: ${{ secrets.DOCKERHUB_USERNAME }}/kindergarten-frontend:.*|image: ${{ secrets.DOCKERHUB_USERNAME }}/kindergarten-frontend:'"$NEW_TAG"'|g' frontend-k8s.yaml
+            
+            # Example using Kustomize (more robust)
+            # cd path/to/your/kustomize/overlay/for/frontend
+            # kustomize edit set image ${{ secrets.DOCKERHUB_USERNAME }}/kindergarten-frontend:${{ github.sha }}
+
+      # - name: Commit and push changes to deployment repository
+      #   uses: stefanzweifel/git-auto-commit-action@v5
+      #   with:
+      #     commit_message: "Update frontend image to ${{ github.sha }}"
+      #     branch: main # Or the branch your K8s cluster pulls from (if using GitOps)
+      #     repository: . # Current checkout is the deployment repo
+      #     # Add other options as needed, like commit_user_name, commit_user_email
+
+      # - name: Trigger deployment (if using ArgoCD/Flux, the commit above might be enough)
+      #   # Or, if you need to kubectl apply:
+      #   # - name: Configure kubectl
+      #   #   uses: azure/k8s-actions/aks-set-context@v1 # Example for AKS, adapt for Kind/other
+      #   #   with:
+      #   #     creds: ${{ secrets.KUBE_CONFIG }} # Securely store your kubeconfig
+      #   # - name: Apply changes
+      #   #   run: kubectl apply -f k8s/frontend/frontend-k8s.yaml -n kindergarten-app
