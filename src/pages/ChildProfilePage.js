@@ -21,7 +21,7 @@ const ChildProfilePage = () => {
   const [isLoadingActivities, setIsLoadingActivities] = useState(true);
   const [profileError, setProfileError] = useState('');
   const [activitiesError, setActivitiesError] = useState('');
-  const [pageMessage, setPageMessage] = useState({text: '', type: ''}); // For general page messages (e.g., update success)
+  const [pageMessage, setPageMessage] = useState({text: '', type: ''});
   const [isEditing, setIsEditing] = useState(false);
   const [editableChildData, setEditableChildData] = useState(null);
   const [showLogActivityModal, setShowLogActivityModal] = useState(false);
@@ -30,9 +30,9 @@ const ChildProfilePage = () => {
   const fetchActivities = useCallback(async () => {
     if (!childId) return;
     setIsLoadingActivities(true);
-    setActivitiesError(''); // Clear previous activity errors
+    setActivitiesError('');
     try {
-      const params = new URLSearchParams({ child_id: childId });
+      const params = new URLSearchParams({ child_id: childId }); // Backend expects child_id
       const data = await apiRequest('ACTIVITY_LOG', `/activities?${params.toString()}`, 'GET');
       setActivities(Array.isArray(data) ? data : (data.activities || [])); 
     } catch (err) {
@@ -51,7 +51,7 @@ const ChildProfilePage = () => {
     }
     setIsLoadingProfile(true);
     setProfileError(''); 
-    setPageMessage({text: '', type: ''}); // Clear general messages
+    setPageMessage({text: '', type: ''});
     try {
       const data = await apiRequest('CHILD_PROFILE', `/children/${childId}`, 'GET');
       setChildData(data);
@@ -67,7 +67,7 @@ const ChildProfilePage = () => {
   useEffect(() => {
     fetchChildData();
     fetchActivities();
-  }, [childId, fetchChildData, fetchActivities]); // Dependencies for initial load
+  }, [childId, fetchChildData, fetchActivities]);
 
   const handleEditToggle = () => setIsEditing(!isEditing);
 
@@ -84,9 +84,8 @@ const ChildProfilePage = () => {
       if (dataToUpdate.birthday && dataToUpdate.birthday.includes('T')) {
           dataToUpdate.birthday = dataToUpdate.birthday.split('T')[0];
       }
-      // Ensure parent_id or created_by_user_id is not accidentally changed by user input if it's part of editableChildData
-      // It's better if the backend handles setting/maintaining ownership fields
-      const { parent_id, created_by_user_id, ...payload } = dataToUpdate; // Example of excluding ownership fields
+      // Exclude fields that shouldn't be sent or are managed by backend (like IDs)
+      const { _id, parent_ids, supervisor_ids, created_at, linking_code, ...payload } = dataToUpdate; 
 
       const updatedChild = await apiRequest('CHILD_PROFILE', `/children/${childId}`, 'PUT', payload);
       setChildData(updatedChild); 
@@ -110,10 +109,16 @@ const ChildProfilePage = () => {
     setTimeout(() => setPageMessage({text: '', type: ''}), 3000);
   };
 
-  // Determine if the current user is the parent of this child
-  // IMPORTANT: Adjust 'childData.parent_id' to match the actual field name from your backend API
-  // that stores the ID of the parent who created/owns the child profile.
-  const isUserParentOfThisChild = user && childData && (user.id === childData.parent_id || user.id === childData.created_by_user_id); 
+  // Determine if the current user is the parent or a linked supervisor of this child
+  // IMPORTANT: Adjust 'childData.parent_ids' and 'childData.supervisor_ids' to match your backend API response.
+  const isUserParentOfThisChild = user && childData && childData.parent_ids && childData.parent_ids.includes(user.id);
+  const isUserLinkedSupervisor = user && childData && childData.supervisor_ids && childData.supervisor_ids.includes(user.id);
+  
+  // User can edit if they are a parent of this child.
+  const canEditProfile = isUserParentOfThisChild;
+  // User can log activity if they are a parent OR a linked supervisor.
+  const canLogActivity = isUserParentOfThisChild || isUserLinkedSupervisor;
+
 
   if (isLoadingProfile) return <div className="p-6 text-center text-brand-textLight">Loading child profile...</div>;
   
@@ -125,8 +130,8 @@ const ChildProfilePage = () => {
           </div>
       );
   }
-  if (!childData) { // Should be caught by profileError, but as a fallback
-      return <div className="p-6 text-center text-brand-textLight">Child data not found.</div>;
+  if (!childData) { 
+      return <div className="p-6 text-center text-brand-textLight">Child data not found or you may not have permission to view it.</div>;
   }
 
   return (
@@ -137,9 +142,7 @@ const ChildProfilePage = () => {
       </div>
       
       {pageMessage.text && <MessageBox message={pageMessage.text} type={pageMessage.type} onDismiss={() => setPageMessage({text:'', type:''})} />}
-      {/* Display profileError if it occurred and isn't overridden by a pageMessage */}
       {profileError && !pageMessage.text && <MessageBox message={profileError} type="error" onDismiss={() => setProfileError('')} />}
-
 
       <Card title="Child Details">
         {!isEditing ? (
@@ -147,9 +150,9 @@ const ChildProfilePage = () => {
             <p><strong>Name:</strong> {childData.name}</p>
             <p><strong>Birthday:</strong> {childData.birthday ? new Date(childData.birthday).toLocaleDateString() : 'N/A'}</p>
             <p><strong>Group:</strong> {childData.group || 'N/A'}</p>
-            <p><strong>Allergies:</strong> {childData.allergies || 'None'}</p>
+            <p><strong>Allergies:</strong> {childData.allergies && Array.isArray(childData.allergies) ? childData.allergies.join(', ') : (childData.allergies || 'None')}</p>
             <p><strong>Notes:</strong> {childData.notes || 'None'}</p>
-            {isUserParentOfThisChild && 
+            {canEditProfile && 
               <Button onClick={handleEditToggle} iconLeft={<Edit3 size={16}/>} variant="secondary" className="mt-2">Edit Profile</Button>
             }
           </div>
@@ -158,7 +161,7 @@ const ChildProfilePage = () => {
             <InputField id="name" name="name" label="Name" value={editableChildData?.name || ''} onChange={handleInputChange} />
             <InputField id="birthday" name="birthday" label="Birthday" type="date" value={editableChildData?.birthday?.split('T')[0] || ''} onChange={handleInputChange} />
             <InputField id="group" name="group" label="Group" value={editableChildData?.group || ''} onChange={handleInputChange} />
-            <InputField id="allergies" name="allergies" label="Allergies" value={editableChildData?.allergies || ''} onChange={handleInputChange} />
+            <InputField id="allergies" name="allergies" label="Allergies (comma-separated)" value={Array.isArray(editableChildData?.allergies) ? editableChildData.allergies.join(',') : (editableChildData?.allergies || '')} onChange={handleInputChange} />
             <div>
               <label htmlFor="notes" className="block text-sm font-medium text-brand-textLight mb-1">Notes</label>
               <textarea id="notes" name="notes" rows="3" value={editableChildData?.notes || ''} onChange={handleInputChange} className="block w-full px-3 py-2 border border-brand-border bg-brand-surface text-brand-text rounded-lg shadow-sm focus:outline-none focus:ring-1 focus:ring-brand-secondary focus:border-brand-secondary sm:text-sm"></textarea>
@@ -171,8 +174,7 @@ const ChildProfilePage = () => {
         )}
       </Card>
 
-      {/* Allow logging if user is a teacher OR the parent of this child */}
-      {(user?.role === 'teacher' || isUserParentOfThisChild) && (
+      {canLogActivity && (
           <Card title="Log New Activity">
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
               <Button onClick={() => openLogActivityModal('meal')} iconLeft={<Sun size={18} className="text-brand-primary"/>} fullWidth>Log Meal</Button>

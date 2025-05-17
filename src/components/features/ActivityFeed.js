@@ -20,7 +20,7 @@ const ActivityFeed = ({ activities, isLoading }) => {
   };
   
   const getIconForActivity = (type) => {
-    switch(type) {
+    switch(type?.toLowerCase()) { // Handle potential casing issues from backend
       case 'meal': return <Sun className="text-brand-secondary" />;
       case 'nap': return <Moon className="text-brand-info" />; 
       case 'drawing': return <ImageIcon className="text-brand-primary" />;
@@ -45,7 +45,7 @@ const ActivityFeed = ({ activities, isLoading }) => {
                 <span className="mr-3">{getIconForActivity(activity.type)}</span>
                 <h3 className="text-md font-semibold text-brand-primary capitalize">{activity.type}</h3>
                 <span className="ml-3 text-sm text-brand-textLight">
-                  {/* Ensure consistent timestamp field access */}
+                  {/* Backend might send timestamp, start_time, or date. Prioritize specific ones. */}
                   {new Date(activity.timestamp || activity.start_time || activity.date).toLocaleString()}
                 </span>
               </div>
@@ -55,34 +55,36 @@ const ActivityFeed = ({ activities, isLoading }) => {
             </div>
             {openActivityId === (activity.activity_id || activity.id) && (
               <div className="mt-3 pl-8 text-sm text-brand-text space-y-1">
+                {/* Display common fields */}
                 {activity.notes && <p><strong>Notes:</strong> {activity.notes}</p>}
-                {/* Meal specific details (if any, beyond notes) */}
-                {activity.type === 'nap' && (
+                
+                {/* Type-specific details */}
+                {activity.type?.toLowerCase() === 'nap' && (
                   <>
-                    <p><strong>Start:</strong> {new Date(activity.start_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
-                    <p><strong>End:</strong> {new Date(activity.end_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
-                    <p><strong>Woke up during:</strong> {activity.woke_up_during ? 'Yes' : 'No'}</p>
+                    {activity.start_time && <p><strong>Start:</strong> {new Date(activity.start_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>}
+                    {activity.end_time && <p><strong>End:</strong> {new Date(activity.end_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>}
+                    {typeof activity.woke_up_during !== 'undefined' && <p><strong>Woke up during:</strong> {activity.woke_up_during ? 'Yes' : 'No'}</p>}
                   </>
                 )}
-                {activity.type === 'drawing' && (
+                {activity.type?.toLowerCase() === 'drawing' && (
                   <>
                     {activity.title && <p><strong>Title:</strong> {activity.title}</p>}
                     {activity.description && <p><strong>Description:</strong> {activity.description}</p>}
-                    {/* Backend test sends photoUrl, frontend was looking for image_url. Standardize or check both. */}
+                    {/* Test script uses photoUrl. Backend might use photo_url or image_url. Check both. */}
                     {(activity.photo_url || activity.image_url) && 
                       <p><strong>Image:</strong> <a href={activity.photo_url || activity.image_url} target="_blank" rel="noopener noreferrer" className="text-brand-secondaryHover hover:underline">View Image</a></p>
                     }
                   </>
                 )}
-                {activity.type === 'behavior' && (
+                {activity.type?.toLowerCase() === 'behavior' && (
                   <>
-                    <p><strong>Date:</strong> {new Date(activity.date).toLocaleDateString()}</p>
-                    {/* Backend test sends 'activities' as an array. Frontend was looking for 'activities_description'. */}
+                    {activity.date && <p><strong>Date:</strong> {new Date(activity.date).toLocaleDateString()}</p>}
+                    {/* Test script sends 'activities' as an array. */}
                     {activity.activities && Array.isArray(activity.activities) && activity.activities.length > 0 &&
                       <p><strong>Activities:</strong> {activity.activities.join(', ')}</p>
                     }
                     {/* Fallback if backend sends activities_description string */}
-                    {activity.activities_description && ! (activity.activities && Array.isArray(activity.activities) && activity.activities.length > 0) &&
+                    {activity.activities_description && typeof activity.activities_description === 'string' &&
                         <p><strong>Activities:</strong> {activity.activities_description}</p>
                     }
                     {activity.grade && <p><strong>Grade:</strong> {activity.grade}</p>}

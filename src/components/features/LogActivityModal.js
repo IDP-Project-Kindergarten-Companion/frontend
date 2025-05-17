@@ -16,7 +16,6 @@ const LogActivityModal = ({ isOpen, onClose, activityType, childId, onActivityLo
     if (isOpen) {
       setMessage({ text: '', type: '' }); 
       const now = new Date();
-      // Adjust for local timezone to prefill datetime-local inputs correctly
       const localDateTime = new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
       const localDate = new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().split('T')[0];
 
@@ -25,15 +24,16 @@ const LogActivityModal = ({ isOpen, onClose, activityType, childId, onActivityLo
           setFormData({ timestamp: localDateTime, notes: '' });
           break;
         case 'nap':
-          setFormData({ startTime: localDateTime, endTime: localDateTime, wokeUpDuring: false, notes: '' });
+          // Assuming backend expects snake_case for these from typical API design
+          setFormData({ start_time: localDateTime, end_time: localDateTime, woke_up_during: false, notes: '' });
           break;
         case 'drawing':
+          // Aligning with test script's photoUrl
           setFormData({ timestamp: localDateTime, photoUrl: '', title: '', description: '' });
           break;
         case 'behavior':
-          // For behavior, the test script sends 'activities' as an array. 
-          // The input field will collect a comma-separated string.
-          setFormData({ date: localDate, activities: '', grade: 'Good', notes: '' });
+          // Input field will be 'activitiesInput' for comma-separated string, then converted to array
+          setFormData({ date: localDate, activitiesInput: '', grade: 'Good', notes: '' });
           break;
         default:
           setFormData({});
@@ -51,53 +51,62 @@ const LogActivityModal = ({ isOpen, onClose, activityType, childId, onActivityLo
     setMessage({ text: '', type: '' });
     setIsLoading(true);
     
-    // Backend test script uses 'childId' (camelCase) in payloads for /log endpoints
-    let payloadBase = { childId: childId }; 
+    // Backend test script uses 'childId' (camelCase) in payloads for /log endpoints.
+    // Ensure your backend activity-log-service expects 'childId' and not 'child_id' in the body.
+    let payload = { childId: childId }; 
     let endpoint = ''; 
-    let specificPayload = {};
 
     try {
       switch (activityType) {
         case 'meal':
           endpoint = '/log/meal'; 
-          specificPayload = { timestamp: new Date(formData.timestamp).toISOString(), notes: formData.notes };
+          payload = { ...payload, timestamp: new Date(formData.timestamp).toISOString(), notes: formData.notes };
           break;
         case 'nap':
           endpoint = '/log/nap'; 
-          specificPayload = { 
-            start_time: new Date(formData.startTime).toISOString(), // Backend often uses snake_case for datetime
-            end_time: new Date(formData.endTime).toISOString(),   // Backend often uses snake_case for datetime
-            woke_up_during: !!formData.wokeUpDuring, 
+          payload = { 
+            ...payload, 
+            // Using snake_case as it's common for backend, but verify with your API. Test script uses camelCase.
+            startTime: new Date(formData.start_time).toISOString(), 
+            endTime: new Date(formData.end_time).toISOString(), 
+            wokeUpDuring: !!formData.woke_up_during, // Ensure boolean
             notes: formData.notes 
           };
+          // If backend strictly follows test script for nap:
+          // payload = { 
+          //   ...payload, 
+          //   startTime: new Date(formData.start_time).toISOString(), 
+          //   endTime: new Date(formData.end_time).toISOString(), 
+          //   wokeUpDuring: !!formData.woke_up_during, 
+          //   notes: formData.notes 
+          // };
           break;
         case 'drawing':
           endpoint = '/log/drawing'; 
-          specificPayload = { 
+          payload = { 
+            ...payload, 
             timestamp: new Date(formData.timestamp).toISOString(), 
-            photo_url: formData.photoUrl, // Test script uses photoUrl, ensure backend matches
+            photoUrl: formData.photoUrl, // Matches test script
             title: formData.title, 
             description: formData.description 
           };
           break;
         case 'behavior':
           endpoint = '/log/behavior'; 
-          specificPayload = { 
+          payload = { 
+            ...payload, 
             date: formData.date, 
-            // Test script sends 'activities' as an array of strings.
-            // Assuming formData.activities is a comma-separated string from input.
-            activities: formData.activities.split(',').map(s => s.trim()).filter(s => s), 
+            activities: formData.activitiesInput.split(',').map(s => s.trim()).filter(s => s), // Matches test script
             grade: formData.grade, 
             notes: formData.notes 
           };
           break;
         default:
+          setIsLoading(false);
           throw new Error("Invalid activity type");
       }
       
-      const finalPayload = { ...payloadBase, ...specificPayload };
-
-      await apiRequest('ACTIVITY_LOG', endpoint, 'POST', finalPayload);
+      await apiRequest('ACTIVITY_LOG', endpoint, 'POST', payload);
       setIsLoading(false);
       onActivityLogged(); 
     } catch (err) {
@@ -118,11 +127,12 @@ const LogActivityModal = ({ isOpen, onClose, activityType, childId, onActivityLo
       case 'nap':
         return (
           <>
-            <InputField id="startTime" name="startTime" label="Start Time" type="datetime-local" value={formData.startTime || ''} onChange={handleChange} required />
-            <InputField id="endTime" name="endTime" label="End Time" type="datetime-local" value={formData.endTime || ''} onChange={handleChange} required />
+            {/* Using snake_case for form field names to match potential backend expectation, then map to camelCase if needed in payload */}
+            <InputField id="start_time" name="start_time" label="Start Time" type="datetime-local" value={formData.start_time || ''} onChange={handleChange} required />
+            <InputField id="end_time" name="end_time" label="End Time" type="datetime-local" value={formData.end_time || ''} onChange={handleChange} required />
             <div className="mb-4">
               <label className="flex items-center">
-                <input type="checkbox" name="wokeUpDuring" checked={!!formData.wokeUpDuring} onChange={handleChange} className="form-checkbox h-5 w-5 text-brand-primary rounded focus:ring-brand-secondary border-brand-border bg-brand-surface" />
+                <input type="checkbox" name="woke_up_during" checked={!!formData.woke_up_during} onChange={handleChange} className="form-checkbox h-5 w-5 text-brand-primary rounded focus:ring-brand-secondary border-brand-border bg-brand-surface" />
                 <span className="ml-2 text-sm text-brand-textLight">Woke up during nap?</span>
               </label>
             </div>
@@ -142,8 +152,7 @@ const LogActivityModal = ({ isOpen, onClose, activityType, childId, onActivityLo
         return (
           <>
             <InputField id="date" name="date" label="Date" type="date" value={formData.date || ''} onChange={handleChange} required />
-            {/* Changed name to "activities" to match payload expectation after split */}
-            <InputField id="activities" name="activities" label="Activities (comma-separated)" value={formData.activities || ''} onChange={handleChange} placeholder="e.g., Circle time, Outdoor play" required />
+            <InputField id="activitiesInput" name="activitiesInput" label="Activities (comma-separated)" value={formData.activitiesInput || ''} onChange={handleChange} placeholder="e.g., Circle time, Outdoor play" required />
             <div className="mb-4">
                 <label htmlFor="grade" className="block text-sm font-medium text-brand-textLight mb-1">Grade <span className="text-brand-error">*</span></label>
                 <select id="grade" name="grade" value={formData.grade || 'Good'} onChange={handleChange} className="block w-full px-3 py-2 border border-brand-border bg-brand-surface text-brand-text rounded-lg shadow-sm focus:outline-none focus:ring-1 focus:ring-brand-secondary focus:border-brand-secondary sm:text-sm">
