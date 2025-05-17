@@ -113,7 +113,7 @@ const ChildProfilePage = () => {
   // Determine if the current user is the parent of this child
   // IMPORTANT: Adjust 'childData.parent_id' to match the actual field name from your backend API
   // that stores the ID of the parent who created/owns the child profile.
-  const isUserParentOfThisChild = user && childData && (user.id === childData.parent_id || user.id === childData.created_by_user_id);
+  const isUserParentOfThisChild = user && childData && (user.id === childData.parent_id || user.id === childData.created_by_user_id); 
 
   if (isLoadingProfile) return <div className="p-6 text-center text-brand-textLight">Loading child profile...</div>;
   

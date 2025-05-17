@@ -1,10 +1,10 @@
 // src/components/features/LogActivityModal.js
 import React, { useState, useEffect } from 'react';
-import { useAuth } from '../../contexts/AuthContext'; // Adjusted path
-import Button from '../ui/Button'; // Adjusted path
-import InputField from '../ui/InputField'; // Adjusted path
-import Modal from '../ui/Modal'; // Adjusted path
-import MessageBox from '../ui/MessageBox'; // Adjusted path
+import { useAuth } from '../../contexts/AuthContext'; 
+import Button from '../ui/Button'; 
+import InputField from '../ui/InputField'; 
+import Modal from '../ui/Modal'; 
+import MessageBox from '../ui/MessageBox'; 
 
 const LogActivityModal = ({ isOpen, onClose, activityType, childId, onActivityLogged }) => {
   const { apiRequest } = useAuth();
@@ -15,11 +15,10 @@ const LogActivityModal = ({ isOpen, onClose, activityType, childId, onActivityLo
   useEffect(() => {
     if (isOpen) {
       setMessage({ text: '', type: '' }); 
-      // Default form data based on activity type
       const now = new Date();
+      // Adjust for local timezone to prefill datetime-local inputs correctly
       const localDateTime = new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
       const localDate = new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().split('T')[0];
-
 
       switch (activityType) {
         case 'meal':
@@ -32,7 +31,9 @@ const LogActivityModal = ({ isOpen, onClose, activityType, childId, onActivityLo
           setFormData({ timestamp: localDateTime, photoUrl: '', title: '', description: '' });
           break;
         case 'behavior':
-          setFormData({ date: localDate, activities_description: '', grade: 'Good', notes: '' });
+          // For behavior, the test script sends 'activities' as an array. 
+          // The input field will collect a comma-separated string.
+          setFormData({ date: localDate, activities: '', grade: 'Good', notes: '' });
           break;
         default:
           setFormData({});
@@ -50,32 +51,53 @@ const LogActivityModal = ({ isOpen, onClose, activityType, childId, onActivityLo
     setMessage({ text: '', type: '' });
     setIsLoading(true);
     
+    // Backend test script uses 'childId' (camelCase) in payloads for /log endpoints
+    let payloadBase = { childId: childId }; 
     let endpoint = ''; 
-    let payload = { ...formData, child_id: childId }; // Ensure child_id is used as per backend expectation
+    let specificPayload = {};
 
     try {
       switch (activityType) {
         case 'meal':
           endpoint = '/log/meal'; 
-          payload = { child_id: childId, timestamp: new Date(formData.timestamp).toISOString(), notes: formData.notes };
+          specificPayload = { timestamp: new Date(formData.timestamp).toISOString(), notes: formData.notes };
           break;
         case 'nap':
           endpoint = '/log/nap'; 
-          payload = { child_id: childId, start_time: new Date(formData.startTime).toISOString(), end_time: new Date(formData.endTime).toISOString(), woke_up_during: !!formData.wokeUpDuring, notes: formData.notes };
+          specificPayload = { 
+            start_time: new Date(formData.startTime).toISOString(), // Backend often uses snake_case for datetime
+            end_time: new Date(formData.endTime).toISOString(),   // Backend often uses snake_case for datetime
+            woke_up_during: !!formData.wokeUpDuring, 
+            notes: formData.notes 
+          };
           break;
         case 'drawing':
           endpoint = '/log/drawing'; 
-          payload = { child_id: childId, timestamp: new Date(formData.timestamp).toISOString(), photo_url: formData.photoUrl, title: formData.title, description: formData.description };
+          specificPayload = { 
+            timestamp: new Date(formData.timestamp).toISOString(), 
+            photo_url: formData.photoUrl, // Test script uses photoUrl, ensure backend matches
+            title: formData.title, 
+            description: formData.description 
+          };
           break;
         case 'behavior':
           endpoint = '/log/behavior'; 
-          // Ensure activities_description is sent, not 'activities' if backend expects that
-          payload = { child_id: childId, date: formData.date, activities_description: formData.activities_description, grade: formData.grade, notes: formData.notes };
+          specificPayload = { 
+            date: formData.date, 
+            // Test script sends 'activities' as an array of strings.
+            // Assuming formData.activities is a comma-separated string from input.
+            activities: formData.activities.split(',').map(s => s.trim()).filter(s => s), 
+            grade: formData.grade, 
+            notes: formData.notes 
+          };
           break;
         default:
           throw new Error("Invalid activity type");
       }
-      await apiRequest('ACTIVITY_LOG', endpoint, 'POST', payload);
+      
+      const finalPayload = { ...payloadBase, ...specificPayload };
+
+      await apiRequest('ACTIVITY_LOG', endpoint, 'POST', finalPayload);
       setIsLoading(false);
       onActivityLogged(); 
     } catch (err) {
@@ -120,7 +142,8 @@ const LogActivityModal = ({ isOpen, onClose, activityType, childId, onActivityLo
         return (
           <>
             <InputField id="date" name="date" label="Date" type="date" value={formData.date || ''} onChange={handleChange} required />
-            <InputField id="activities_description" name="activities_description" label="Activities Description" value={formData.activities_description || ''} onChange={handleChange} placeholder="e.g., Played well with others during circle time." required />
+            {/* Changed name to "activities" to match payload expectation after split */}
+            <InputField id="activities" name="activities" label="Activities (comma-separated)" value={formData.activities || ''} onChange={handleChange} placeholder="e.g., Circle time, Outdoor play" required />
             <div className="mb-4">
                 <label htmlFor="grade" className="block text-sm font-medium text-brand-textLight mb-1">Grade <span className="text-brand-error">*</span></label>
                 <select id="grade" name="grade" value={formData.grade || 'Good'} onChange={handleChange} className="block w-full px-3 py-2 border border-brand-border bg-brand-surface text-brand-text rounded-lg shadow-sm focus:outline-none focus:ring-1 focus:ring-brand-secondary focus:border-brand-secondary sm:text-sm">
