@@ -3,7 +3,7 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { BrowserRouter } from 'react-router-dom';
 import './index.css';
-import Main from './app.js';
+import Main from './Main'; // Assuming Main is your main component
 
 const root = ReactDOM.createRoot(document.getElementById('root'));
 root.render(

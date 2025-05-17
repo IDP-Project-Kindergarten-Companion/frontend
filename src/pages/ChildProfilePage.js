@@ -1,13 +1,13 @@
 // src/pages/ChildProfilePage.js
 import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { useAuth } from '../../contexts/AuthContext'; // Adjusted path
-import Button from '../../components/ui/Button'; // Adjusted path
-import Card from '../../components/ui/Card'; // Adjusted path
-import InputField from '../../components/ui/InputField'; // Adjusted path
-import MessageBox from '../../components/ui/MessageBox'; // Adjusted path
-import LogActivityModal from '../../components/features/LogActivityModal'; // Adjusted path
-import ActivityFeed from '../../components/features/ActivityFeed'; // Adjusted path
+import { useAuth } from '../contexts/AuthContext';
+import Button from '../components/ui/Button';
+import Card from '../components/ui/Card';
+import InputField from '../components/ui/InputField';
+import MessageBox from '../components/ui/MessageBox';
+import LogActivityModal from '../components/features/LogActivityModal';
+import ActivityFeed from '../components/features/ActivityFeed';
 import { Edit3, Sun, Moon, Image as ImageIcon, Award } from 'lucide-react';
 
 const ChildProfilePage = () => {

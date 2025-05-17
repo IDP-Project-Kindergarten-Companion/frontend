@@ -1,11 +1,11 @@
 // src/pages/UserProfilePage.js
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useAuth } from '../../contexts/AuthContext'; // Adjusted path
-import Button from '../../components/ui/Button'; // Adjusted path
-import Card from '../../components/ui/Card'; // Adjusted path
-import InputField from '../../components/ui/InputField'; // Adjusted path
-import MessageBox from '../../components/ui/MessageBox'; // Adjusted path
+import { useAuth } from '../contexts/AuthContext';
+import Button from '../components/ui/Button';
+import Card from '../components/ui/Card';
+import InputField from '../components/ui/InputField';
+import MessageBox from '../components/ui/MessageBox';
 import { LogOut } from 'lucide-react';
 
 const UserProfilePage = () => {
