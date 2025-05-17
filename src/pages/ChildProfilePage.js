@@ -27,12 +27,19 @@ const ChildProfilePage = () => {
   const [showLogActivityModal, setShowLogActivityModal] = useState(false);
   const [activityTypeToLog, setActivityTypeToLog] = useState('');
 
+  const isValidChildId = (id) => id && id !== "undefined" && id !== null;
+
   const fetchActivities = useCallback(async () => {
-    if (!childId) return;
+    if (!isValidChildId(childId)) { // Check if childId is valid
+        setActivitiesError("Invalid Child ID for fetching activities.");
+        setIsLoadingActivities(false);
+        setActivities([]);
+        return;
+    }
     setIsLoadingActivities(true);
     setActivitiesError('');
     try {
-      const params = new URLSearchParams({ child_id: childId }); // Backend expects child_id
+      const params = new URLSearchParams({ child_id: childId });
       const data = await apiRequest('ACTIVITY_LOG', `/activities?${params.toString()}`, 'GET');
       setActivities(Array.isArray(data) ? data : (data.activities || [])); 
     } catch (err) {
@@ -44,9 +51,10 @@ const ChildProfilePage = () => {
   }, [childId, apiRequest]);
 
   const fetchChildData = useCallback(async () => {
-    if (!childId) {
-        setProfileError("No child ID provided.");
+    if (!isValidChildId(childId)) { // Check if childId is valid
+        setProfileError("Invalid Child ID provided for profile.");
         setIsLoadingProfile(false);
+        setChildData(null);
         return;
     }
     setIsLoadingProfile(true);
@@ -65,8 +73,18 @@ const ChildProfilePage = () => {
   }, [childId, apiRequest]);
 
   useEffect(() => {
-    fetchChildData();
-    fetchActivities();
+    console.log("ChildProfilePage mounted or childId changed. Current childId from URL:", childId);
+    if (isValidChildId(childId)) {
+        fetchChildData();
+        fetchActivities();
+    } else {
+        setProfileError("No valid child selected to display profile.");
+        setActivitiesError("No valid child selected to display activities.");
+        setIsLoadingProfile(false);
+        setIsLoadingActivities(false);
+        setChildData(null);
+        setActivities([]);
+    }
   }, [childId, fetchChildData, fetchActivities]);
 
   const handleEditToggle = () => setIsEditing(!isEditing);
@@ -77,14 +95,13 @@ const ChildProfilePage = () => {
   };
 
   const handleSaveChanges = async () => {
-    if (!editableChildData) return;
+    if (!editableChildData || !isValidChildId(childId)) return;
     setPageMessage({text: '', type: ''}); 
     try {
       const dataToUpdate = { ...editableChildData };
       if (dataToUpdate.birthday && dataToUpdate.birthday.includes('T')) {
           dataToUpdate.birthday = dataToUpdate.birthday.split('T')[0];
       }
-      // Exclude fields that shouldn't be sent or are managed by backend (like IDs)
       const { _id, parent_ids, supervisor_ids, created_at, linking_code, ...payload } = dataToUpdate; 
 
       const updatedChild = await apiRequest('CHILD_PROFILE', `/children/${childId}`, 'PUT', payload);
@@ -98,6 +115,10 @@ const ChildProfilePage = () => {
   };
   
   const openLogActivityModal = (type) => {
+    if (!isValidChildId(childId)) {
+        setPageMessage({text: "Cannot log activity: Invalid child ID.", type: "error"});
+        return;
+    }
     setActivityTypeToLog(type);
     setShowLogActivityModal(true);
   };
@@ -108,36 +129,32 @@ const ChildProfilePage = () => {
     fetchActivities(); 
     setTimeout(() => setPageMessage({text: '', type: ''}), 3000);
   };
-
-  // Determine if the current user is the parent or a linked supervisor of this child
+  
   // IMPORTANT: Adjust 'childData.parent_ids' and 'childData.supervisor_ids' to match your backend API response.
   const isUserParentOfThisChild = user && childData && childData.parent_ids && childData.parent_ids.includes(user.id);
   const isUserLinkedSupervisor = user && childData && childData.supervisor_ids && childData.supervisor_ids.includes(user.id);
   
-  // User can edit if they are a parent of this child.
   const canEditProfile = isUserParentOfThisChild;
-  // User can log activity if they are a parent OR a linked supervisor.
   const canLogActivity = isUserParentOfThisChild || isUserLinkedSupervisor;
-
 
   if (isLoadingProfile) return <div className="p-6 text-center text-brand-textLight">Loading child profile...</div>;
   
-  if (profileError && !childData) {
+  if (!isValidChildId(childId) || (profileError && !childData)) {
       return (
           <div className="p-6">
-              <MessageBox message={profileError} type="error" onDismiss={() => setProfileError('')} />
+              <MessageBox message={profileError || "Invalid child ID specified."} type="error" onDismiss={() => setProfileError('')} />
               <Button onClick={() => navigate('/dashboard')} variant="secondary" className="mt-4">Back to Dashboard</Button>
           </div>
       );
   }
-  if (!childData) { 
+  if (!childData && !isLoadingProfile) { // After loading, if still no childData (e.g. 404 from backend)
       return <div className="p-6 text-center text-brand-textLight">Child data not found or you may not have permission to view it.</div>;
   }
 
   return (
     <div className="p-6 space-y-6">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center">
-        <h1 className="text-3xl font-bold text-brand-text mb-2 sm:mb-0">{childData.name}</h1>
+        <h1 className="text-3xl font-bold text-brand-text mb-2 sm:mb-0">{childData?.name || "Child Profile"}</h1>
         <Button onClick={() => navigate('/dashboard')} variant="secondary">Back to Dashboard</Button>
       </div>
       
@@ -145,7 +162,7 @@ const ChildProfilePage = () => {
       {profileError && !pageMessage.text && <MessageBox message={profileError} type="error" onDismiss={() => setProfileError('')} />}
 
       <Card title="Child Details">
-        {!isEditing ? (
+        {!childData ? <p className="text-brand-textLight">Loading details...</p> : !isEditing ? (
           <div className="space-y-2 text-brand-text">
             <p><strong>Name:</strong> {childData.name}</p>
             <p><strong>Birthday:</strong> {childData.birthday ? new Date(childData.birthday).toLocaleDateString() : 'N/A'}</p>
@@ -174,7 +191,7 @@ const ChildProfilePage = () => {
         )}
       </Card>
 
-      {canLogActivity && (
+      {canLogActivity && childData && ( // Ensure childData is loaded before showing log activity card
           <Card title="Log New Activity">
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
               <Button onClick={() => openLogActivityModal('meal')} iconLeft={<Sun size={18} className="text-brand-primary"/>} fullWidth>Log Meal</Button>
@@ -189,7 +206,7 @@ const ChildProfilePage = () => {
         isOpen={showLogActivityModal} 
         onClose={() => setShowLogActivityModal(false)} 
         activityType={activityTypeToLog} 
-        childId={childId}
+        childId={childId} // This should be the valid childId from useParams
         onActivityLogged={onActivityLogged}
       />
 
