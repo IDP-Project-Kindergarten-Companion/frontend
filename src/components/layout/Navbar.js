@@ -25,7 +25,7 @@ const Navbar = () => {
           <div className="flex items-center">
             <Link to={user ? "/dashboard" : "/login"} className="flex-shrink-0 flex items-center">
               <img 
-                src={`https://placehold.co/40x40/${primaryColorHex}/${textColorHex}?text=LS`} 
+                src={`../../../public/logo.png`}
                 alt="Little Steps Logo" 
                 className="h-10 w-10 mr-2 rounded-full"
               />

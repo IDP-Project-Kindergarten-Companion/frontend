@@ -1,21 +1,16 @@
+    {
+      "short_name": "Little Steps",
+      "name": "Little Steps - Kindergarten Companion",
+      "icons": [
         {
-          "short_name": "Little Steps",
-          "name": "Little Steps - Kindergarten Companion",
-          "icons": [
-            {
-              "src": "favicon.ico",
-              "sizes": "64x64 32x32 24x24 16x16",
-              "type": "image/x-icon"
-            },
-            {
-              "src": "logo192.png",
-              "type": "image/png",
-              "sizes": "192x192"
-            }
-          ],
-          "start_url": ".",
-          "display": "standalone",
-          "theme_color": "#967259", 
-          "background_color": "#FFF7ED"
+          "src": "logo.png",
+          "sizes": "400x400", 
+          "type": "image/png"
         }
-        
+      ],
+      "start_url": ".",
+      "display": "standalone",
+      "theme_color": "#967259",
+      "background_color": "#FFF7ED"
+    }
+    
