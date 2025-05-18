@@ -14,10 +14,6 @@ const Navbar = () => {
     navigate('/login');
   };
 
-  // Placeholder image URL generation
-  const primaryColorHex = "967259"; // From brand.primary
-  const textColorHex = "FFFFFF"; // For text on primary background
-
   return (
     <nav className="bg-brand-primary text-white shadow-lg">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -25,7 +21,7 @@ const Navbar = () => {
           <div className="flex items-center">
             <Link to={user ? "/dashboard" : "/login"} className="flex-shrink-0 flex items-center">
               <img 
-                src={`../../../public/logo.png`}
+                src={`../../../../public/logo.png`}
                 alt="Little Steps Logo" 
                 className="h-10 w-10 mr-2 rounded-full"
               />
